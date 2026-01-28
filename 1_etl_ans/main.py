@@ -119,3 +119,26 @@ def baixar_e_extrair(trimestres):
                     os.remove(caminho_zip)
 
     return pasta_com_dados
+
+def normalizar_colunas(df):
+    df.columns = [
+        c.strip().upper()
+        .replace('Ç', 'C').replace('Ã', 'A').replace('Õ', 'O')
+        .replace(' ', '_').replace('.', '')
+        for c in df.columns
+    ]
+    return df
+
+def ler_arquivo_flexivel(caminho):
+    try:
+        if caminho.endswith('xlsx'):
+            return pd.read_excel(caminho, dtype=str)
+        else:
+            try:
+                return pd.read_csv(caminho, sep=";", encoding='latin-1', dtype=str)
+            except:
+                return pd.read_csv(caminho, sep=',', encoding='utf-8', dtype=str)
+
+    except Exception as e:
+        print(f"Erro lendo o arquivo: {e}")
+        return None
