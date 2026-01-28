@@ -84,17 +84,26 @@ def baixar_e_extrair(trimestres):
 
     print("Iniciando downloads...")
     for item in trimestres:
-        links = listar_links(item['url'])
-        zips = [l for l in links if l.lower().endswith('.zip')]
+        urls_para_baixar = []
 
-        if not zips:
+        if item['url'].lower().endswith('.zip'):
+            urls_para_baixar.append(item['url'])
+        else:
+            links = listar_links(item['url'])
+            for l in links:
+                if l.lower().endswith('.zip'):
+                    urls_para_baixar.append(urljoin(item['url'], l))
+
+        if not urls_para_baixar:
             print(f"Sem ZIP em {item['ano']}/T{item['trimestre']}. Pulando.")
             continue
 
-        for zip_name in zips:
-            url_zip = urljoin(item['url'], zip_name)
+        for url_zip in urls_para_baixar:
+            zip_name = os.path.basename(url_zip)
             pasta_destino = os.path.join(OUTPUT_DIR, f"{item['ano']}_T{item['trimestre']}")
             caminho_zip = os.path.join(OUTPUT_DIR, "temp.zip")
+
+            os.makedirs(pasta_destino, exist_ok=True)
 
             # Download
             print(f"Baixando {zip_name}...")
@@ -123,7 +132,6 @@ def baixar_e_extrair(trimestres):
                     os.remove(caminho_zip)
 
     return pasta_com_dados
-
 
 def normalizar_colunas(df):
     df.columns = [
