@@ -16,14 +16,16 @@ FINAL_ZIP = "output/consolidado_despesas.zip"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs("output", exist_ok=True)
 
+
 def get_soup(url):
     try:
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         return BeautifulSoup(response.text, "html.parser")
     except Exception as e:
-        print(f"Error  ao acessar {url}: {e}")
+        print(f"Error ao acessar {url}: {e}")
         return None
+
 
 def listar_links(url):
     soup = get_soup(url)
@@ -34,8 +36,9 @@ def listar_links(url):
     for a in soup.find_all('a'):
         href = a.get('href')
         if href and href != '../' and not href.startswith('?'):
-           links.append(href)
+            links.append(href)
     return links
+
 
 def encontrar_ultimos_trimestres(qtd=3):
     print("Mapeando trimestres disponiveis...")
@@ -53,7 +56,7 @@ def encontrar_ultimos_trimestres(qtd=3):
         match_ano = re.search(r'(\d{4})', link_ano)
         if match_ano:
             ano = int(match_ano.group(1))
-            url_ano = urljoin(url_base_demo, ano)
+            url_ano = urljoin(url_base_demo, link_ano)
 
             links_tri = listar_links(url_ano)
             for link_tri in links_tri:
@@ -75,6 +78,7 @@ def encontrar_ultimos_trimestres(qtd=3):
 
     return selecionados
 
+
 def baixar_e_extrair(trimestres):
     pasta_com_dados = []
 
@@ -92,7 +96,7 @@ def baixar_e_extrair(trimestres):
             pasta_destino = os.path.join(OUTPUT_DIR, f"{item['ano']}_T{item['trimestre']}")
             caminho_zip = os.path.join(OUTPUT_DIR, "temp.zip")
 
-            #Download
+            # Download
             print(f"Baixando {zip_name}...")
             try:
                 with requests.get(url_zip, stream=True) as response:
@@ -120,14 +124,18 @@ def baixar_e_extrair(trimestres):
 
     return pasta_com_dados
 
+
 def normalizar_colunas(df):
     df.columns = [
         c.strip().upper()
-        .replace('Ç', 'C').replace('Ã', 'A').replace('Õ', 'O')
+        .replace('Ç', 'C')
+        .replace('Ã', 'A')
+        .replace('Õ', 'O')
         .replace(' ', '_').replace('.', '')
         for c in df.columns
     ]
     return df
+
 
 def ler_arquivo_flexivel(caminho):
     try:
@@ -142,3 +150,121 @@ def ler_arquivo_flexivel(caminho):
     except Exception as e:
         print(f"Erro lendo o arquivo: {e}")
         return None
+
+
+def processar_consolidar(pastas):
+    dfs = []
+    print("\n Processando arquivos...")
+
+    for item in pastas:
+        for root, _, files in os.walk(item['caminho']):
+            for file in files:
+                if not (file.lower().endswith('.csv') or file.lower().endswith('.xlsx')):
+                    continue
+                if 'receita' in file.lower() or 'ativo' in file.lower():
+                    continue
+
+                caminho_completo = os.path.join(root, file)
+                df = ler_arquivo_flexivel(caminho_completo)
+
+                if df is None: continue
+                df = normalizar_colunas(df)
+
+                col_map = {
+                    'VL_SALDO_FINAL': 'ValorDespesas',
+                    'VALOR': 'ValorDespesas',
+                    'CD_CONTA_CONTABIL': 'Conta',
+                    'REG_ANS': 'RegistroANS',
+                    'DESCRIÇÃO': 'Descricao',
+                    'DESCRICAO': 'Descricao'
+                }
+                df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+
+                if 'ValorDespesas' not in df.columns:
+                    continue
+
+                # Filtra apenas contas de DESPESA (Começam com 4) se a coluna Conta existir
+                if 'Conta' in df.columns:
+                    df = df[df['Conta'].astype(str).str.startswith('4')]
+
+                # Normaliza Valor
+                df['ValorDespesas'] = (
+                    df['ValorDespesas']
+                    .astype(str)
+                    .str.replace('.', '', regex=False)
+                    .str.replace(',', '.', regex=False)  # CORRECAO 2: Troca virgula por ponto
+                )
+
+                #Preencher nulos com 0
+                df['ValorDespesas'] = pd.to_numeric(df['ValorDespesas'], errors='coerce').fillna(0)
+
+                df['Ano'] = item['ano']
+                df['Trimestre'] = item['trimestre']
+
+                # Colunas finais
+                if 'CNPJ' not in df.columns: df['CNPJ'] = 'N/A'
+
+                # Ajuste para garantir RazaoSocial
+                if 'RAZAO_SOCIAL' in df.columns:
+                    df = df.rename(columns={'RAZAO_SOCIAL': 'RazaoSocial'})
+                elif 'RAZAO' in df.columns:
+                    df = df.rename(columns={'RAZAO': 'RazaoSocial'})
+
+                if 'RazaoSocial' not in df.columns:
+                    df['RazaoSocial'] = 'N/A'
+
+                cols_finais = ['CNPJ', 'RazaoSocial', 'Ano', 'Trimestre', 'ValorDespesas']
+                cols_existentes = [c for c in cols_finais if c in df.columns]
+
+                dfs.append(df[cols_existentes])
+
+    if not dfs:
+        raise Exception("Nenhum dado encontrado nos arquivos baixados.")
+
+    return pd.concat(dfs, ignore_index=True)
+
+
+if __name__ == '__main__':
+    try:
+        # Identificacao
+        trimestres = encontrar_ultimos_trimestres()
+        # Baixar e Extrair
+        pastas = baixar_e_extrair(trimestres)
+        # Consolidar
+        df_final = processar_consolidar(pastas)
+
+        print("\nSalvando resultados...")
+
+        cols_obrigatorias = ['CNPJ', 'RazaoSocial', 'Trimestre', 'Ano', 'ValorDespesas']
+        for c in cols_obrigatorias:
+            if c not in df_final.columns:
+                df_final[c] = "N/A"
+
+        print("Padronizando Razões Sociais por CNPJ...")
+
+        df_final.sort_values(by=['Ano', 'Trimestre'], ascending=True, inplace=True)
+
+        mapa_nomes = df_final.groupby('CNPJ')['RazaoSocial'].last().to_dict()
+
+        df_final['RazaoSocial'] = df_final['CNPJ'].map(mapa_nomes)
+
+        # filtra valores negativos e zerados
+        df_final = df_final[df_final['ValorDespesas'] > 0]
+
+        # Salva o CSV
+        df_final[cols_obrigatorias].to_csv(FINAL_CSV, index=False, sep=';', encoding='utf-8')
+        print(f" -> CSV criado: {FINAL_CSV}")
+
+        # Salva o ZIP (CORRECAO 4: Usar FINAL_ZIP, nao FINAL_CSV)
+        with zipfile.ZipFile(FINAL_ZIP, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write(FINAL_CSV, arcname="consolidado_despesas.csv")
+        print(f" -> ZIP final criado: {FINAL_ZIP}")
+
+        shutil.rmtree(OUTPUT_DIR)
+        print("Arquivos temporarios limpos.")
+
+        print("TAREFA 1 CONCLUIDA COM SUCESSO!")
+
+    except Exception as e:
+        print(f"\nErro Fatal no Processo:\n{e}")
+        traceback.print_exc()
