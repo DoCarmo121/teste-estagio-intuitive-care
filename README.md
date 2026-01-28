@@ -27,9 +27,15 @@ pip install -r requirements.txt
 python main.py
 ```
 
- - Entrada: Dados do site da ANS (https://dadosabertos.ans.gov.br/).
- - Saída: Arquivo output/consolidado_despesas.csv.
- - Nota: Este arquivo mantém a coluna RegistroANS como chave primária e preenche CNPJ/Razão Social com "N/A", pois os arquivos contábeis originais não possuem esses dados.
+### Entrada
+- Dados públicos do site da ANS  
+  (<https://dadosabertos.ans.gov.br/>)
+
+### Saída
+- `output/consolidado_despesas.csv`
+
+### Nota
+Este arquivo mantém a coluna **RegistroANS** como chave primária e preenche **CNPJ** e **Razão Social** com `"N/A"`, pois os arquivos contábeis originais não possuem essas informações.
 
 ### Passo 2: Transformação, Enriquecimento e Validação
 Este script lê o arquivo bruto gerado no passo anterior, baixa o Cadastro de Operadoras (CADOP), realiza o cruzamento de dados, aplica validações e gera estatísticas.
@@ -41,47 +47,79 @@ pip install -r requirements.txt
 python main.py
 ```
 
- - Entrada: ../1_etl_ans/output/consolidado_despesas.csv.
- - Processamento: 1. Download automático do CADOP (Operadoras Ativas). 2. Join entre tabelas usando RegistroANS. 3. Validação de CNPJs e valores. 4. Cálculo de média trimestral e desvio padrão.
- - Saída: Arquivo output/despesas_agregadas.csv e arquivo ZIP final.
+ ## 4. Fluxo de Processamento — Tarefa 2
 
-### Trade-offs e Decisões Técnicas (Documentação Obrigatória)
-Abaixo estão as justificativas para as abordagens técnicas adotadas, conforme solicitado na avaliação.
+### Entrada
+- `../1_etl_ans/output/consolidado_despesas.csv`
 
-1. Estratégia de Join e Integridade Referencial (O Caso "RegistroANS")
+### Processamento
+- Download automático do **CADOP (Operadoras Ativas)**.
+- Join entre as tabelas utilizando o **RegistroANS**.
+- Validação de **CNPJs** e **valores contábeis**.
+- Cálculo de **média trimestral** e **desvio padrão**.
 
-Decisão: Utilizar o RegistroANS como chave de ligação (Foreign Key) entre a etapa de extração e a de enriquecimento.
+### Saída
+- `output/despesas_agregadas.csv`
+- Arquivo **ZIP** final com os resultados.
 
-    Problema: Os arquivos CSV de demonstrações contábeis da ANS (fonte primária da Tarefa 1) não possuem as colunas de CNPJ ou Razão Social, apenas o código identificador REG_ANS. Tentar validar CNPJ na primeira etapa seria impossível sem dados externos.
 
-    Solução: O Pipeline foi dividido. A Tarefa 1 foca em extrair o dado contábil fielmente (preservando o RegistroANS). A Tarefa 2 atua como uma camada de "Trusted Data", baixando o Cadastro de Operadoras (CADOP) oficial e realizando um Left Join.
+# 🧠 Trade-offs e Decisões Técnicas  
+**(Documentação Obrigatória)**
 
-    Benefício: Garante que os dados cadastrais (Razão Social, CNPJ) sejam os oficiais da ANS, eliminando riscos de erros de digitação que poderiam existir nos arquivos contábeis manuais.
+Este documento descreve as principais decisões técnicas adotadas no pipeline de dados e suas justificativas.
 
-2. Validação e Tratamento de Inconsistências
+---
 
-    Datas Inconsistentes: A coluna de data interna dos arquivos CSV originais variava drasticamente de formato (1T2024, 01/01/2024, jan/24).
+## 1. Estratégia de Join e Integridade Referencial  
+### 📌 Uso do *RegistroANS*
 
-        Solução: A data interna foi ignorada. O script utiliza a estrutura de diretórios do servidor da ANS (Source of Truth) para injetar as colunas Ano e Trimestre de forma 100% confiável.
+### Decisão
+Utilizar o **RegistroANS** como chave de ligação entre a etapa de extração e a de enriquecimento dos dados.
 
-    Valores Zerados/Negativos:
+### Justificativa
+Os arquivos de demonstrações contábeis da ANS não possuem **CNPJ** nem **Razão Social**, apenas o identificador `REG_ANS`. Assim, qualquer validação cadastral na etapa inicial seria inviável.
 
-        Solução: Filtrados e removidos (Valor > 0). Para fins de análise de volume de despesas, estornos (valores negativos) ou registros nulos não agregam valor estatístico e distorceriam o cálculo da média e do desvio padrão.
+### Solução
+- **Tarefa 1:** extração fiel dos dados contábeis, preservando o `RegistroANS`.
+- **Tarefa 2:** enriquecimento com o **Cadastro de Operadoras (CADOP)** oficial da ANS, via **Left Join**.
 
-    CNPJs Inválidos:
+### Benefício
+Garante que os dados cadastrais utilizados sejam oficiais e elimina inconsistências causadas por erros manuais.
 
-        Solução: A validação ocorre na etapa 2, após o enriquecimento. CNPJs matematicamente inválidos são logados no terminal para auditoria, mas mantidos no relatório final se possuírem valores contábeis relevantes. Remover esses dados mascararia o volume financeiro real do setor.
+---
 
-3. Processamento de Dados (Memória vs. Stream)
+## 2. Validação e Tratamento de Inconsistências
 
-Decisão: Processamento híbrido.
+### Datas
+Os arquivos apresentavam múltiplos formatos de data.  
+**Solução:** a data interna foi ignorada, utilizando-se a estrutura de diretórios da ANS como *Source of Truth* para definir **Ano** e **Trimestre**.
 
-    Download: Feito via Stream (chunks de 8KB) para evitar que o download de arquivos grandes lote a memória RAM antes do processamento.
+### Valores Zerados ou Negativos
+Registros com `Valor ≤ 0` foram removidos.  
+**Justificativa:** estornos e valores nulos distorcem métricas estatísticas e não agregam valor à análise de despesas.
 
-    Processamento: Feito In-Memory (Pandas) acumulando DataFrames em listas.
+### CNPJs Inválidos
+A validação ocorre após o enriquecimento.  
+CNPJs inválidos são **logados**, mas mantidos caso possuam valores relevantes, evitando mascarar o volume financeiro real do setor.
 
-    Justificativa: Os demonstrativos trimestrais da ANS, mesmo acumulados, possuem volume de dados (MBs) perfeitamente comportável na RAM de computadores modernos, tornando o processamento em memória muito mais rápido do que abordagens em disco (como Spark ou Dask) para este volume específico.
+---
 
+## 3. Processamento de Dados  
+### ⚖️ Memória vs. Stream
+
+### Decisão
+Processamento **híbrido**.
+
+- **Download:** via stream (chunks de 8 KB) para evitar consumo excessivo de memória.
+- **Processamento:** em memória (Pandas).
+
+### Justificativa
+O volume total dos dados (MBs) é plenamente comportável em RAM, tornando o processamento in-memory mais simples e eficiente do que soluções distribuídas como Spark ou Dask para este contexto.
+
+---
+
+## ✅ Conclusão
+As decisões priorizam confiabilidade, integridade dos dados e performance adequada ao volume real do problema.
 
 ~~## 🛠 Tecnologias Utilizadas
 
