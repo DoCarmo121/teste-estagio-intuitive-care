@@ -36,3 +36,86 @@ def listar_links(url):
         if href and href != '../' and not href.startswith('?'):
            links.append(href)
     return links
+
+def encontrar_ultimos_trimestres(qtd=3):
+    print("Mapeando trimestres disponiveis...")
+    link_raiz = listar_links(BASE_URL)
+    pasta_raiz = next((l for l in link_raiz if "demonstracoes_contabeis" in l.lower()), None)
+    if not pasta_raiz:
+        raise Exception("Pasta 'Demonstrações Contábeis' não encontrada.")
+
+    url_base_demo = urljoin(BASE_URL, pasta_raiz)
+
+    todos_trimestres = []
+    links_anos = listar_links(url_base_demo)
+
+    for link_ano in links_anos:
+        match_ano = re.search(r'(\d{4})', link_ano)
+        if match_ano:
+            ano = int(match_ano.group(1))
+            url_ano = urljoin(url_base_demo, ano)
+
+            links_tri = listar_links(url_ano)
+            for link_tri in links_tri:
+                match_tri = re.search(r'(\d)T', link_tri, re.IGNORECASE)
+                if match_tri:
+                    tri = int(match_tri.group(1))
+                    todos_trimestres.append({
+                        'ano': ano,
+                        'trimestre': tri,
+                        'url': urljoin(url_ano, link_tri),
+                    })
+
+    todos_trimestres.sort(key=lambda x: (x['ano'], x['trimestre']), reverse=True)
+    selecionados = todos_trimestres[:qtd]
+
+    print("Trimestres selecionados:")
+    for t in selecionados:
+        print(f" -> {t['ano']} / {t['trimestre']}º Trimestre")
+
+    return selecionados
+
+def baixar_e_extrair(trimestres):
+    pasta_com_dados = []
+
+    print("Iniciando downloads...")
+    for item in trimestres:
+        links = listar_links(item['url'])
+        zips = [l for l in links if l.lower().endswith('.zip')]
+
+        if not zips:
+            print(f"Sem ZIP em {item['ano']}/T{item['trimestre']}. Pulando.")
+            continue
+
+        for zip_name in zips:
+            url_zip = urljoin(item['url'], zip_name)
+            pasta_destino = os.path.join(OUTPUT_DIR, f"{item['ano']}_T{item['trimestre']}")
+            caminho_zip = os.path.join(OUTPUT_DIR, "temp.zip")
+
+            #Download
+            print(f"Baixando {zip_name}...")
+            try:
+                with requests.get(url_zip, stream=True) as response:
+                    response.raise_for_status()
+                    with open(caminho_zip, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+
+                print(" Extraindo...")
+                with zipfile.ZipFile(caminho_zip, 'r') as zf:
+                    zf.extractall(pasta_destino)
+
+                pasta_com_dados.append({
+                    'caminho': pasta_destino,
+                    'ano': item['ano'],
+                    'trimestre': item['trimestre']
+                })
+
+            except Exception as e:
+                print(f"Erro no Download/extracao de {zip_name}: {e}")
+
+            finally:
+                if os.path.exists(caminho_zip):
+                    os.remove(caminho_zip)
+
+    return pasta_com_dados
