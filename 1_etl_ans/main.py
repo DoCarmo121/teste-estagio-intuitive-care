@@ -180,11 +180,11 @@ def processar_consolidar(pastas):
 
                 col_map = {
                     'VL_SALDO_FINAL': 'ValorDespesas',
-                    'VALOR': 'ValorDespesas',
-                    'CD_CONTA_CONTABIL': 'Conta',
-                    'REG_ANS': 'RegistroANS',
-                    'DESCRIÇÃO': 'Descricao',
-                    'DESCRICAO': 'Descricao'
+                        'VALOR': 'ValorDespesas',
+                        'REG_ANS': 'RegistroANS',
+                        'REGISTRO_ANS': 'RegistroANS',
+                        'CD_OPS': 'RegistroANS',
+                        'CD_CONTA_CONTABIL': 'Conta'
                 }
                 df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
 
@@ -209,6 +209,9 @@ def processar_consolidar(pastas):
                 df['Ano'] = item['ano']
                 df['Trimestre'] = item['trimestre']
 
+                if 'RegistroANS' not in df.columns:
+                    df['RegistroANS'] = '0'
+
                 # Colunas finais
                 if 'CNPJ' not in df.columns: df['CNPJ'] = 'N/A'
 
@@ -221,7 +224,7 @@ def processar_consolidar(pastas):
                 if 'RazaoSocial' not in df.columns:
                     df['RazaoSocial'] = 'N/A'
 
-                cols_finais = ['CNPJ', 'RazaoSocial', 'Ano', 'Trimestre', 'ValorDespesas']
+                cols_finais = ['RegistroANS', 'CNPJ', 'RazaoSocial', 'Ano', 'Trimestre', 'ValorDespesas']
                 cols_existentes = [c for c in cols_finais if c in df.columns]
 
                 dfs.append(df[cols_existentes])
