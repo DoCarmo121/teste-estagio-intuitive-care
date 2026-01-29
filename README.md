@@ -1,15 +1,23 @@
 # Intuitive Care - Desafio Técnico (Estágio)
 
-Este repositório contém a solução Full-Stack para o desafio técnico da Intuitive Care, estruturada como um **Monorepo** que abrange todo o ciclo de vida dos dados: Engenharia de Dados (ETL), Enriquecimento (Data Enrichment), Banco de Dados (SQL) e Desenvolvimento Web (Vue.js + Python).
+Este repositório contém a solução Full-Stack para o desafio técnico da Intuitive Care. O projeto foi estruturado como um **Monorepo** que abrange todo o ciclo de vida dos dados: Engenharia de Dados (ETL), Enriquecimento (Data Enrichment), Banco de Dados (SQL) e Desenvolvimento Web (Vue.js + Python).
 
 ## 📂 Estrutura do Projeto
 
 O projeto foi organizado em módulos independentes que funcionam como um Pipeline de Dados sequencial:
 
-* **`1_etl_ans/`**: **(Tarefa 1)** Scripts de extração (`Extract`) responsáveis por varrer o site da ANS, baixar e consolidar os dados brutos contábeis.
-* **`2_transformacao/`**: **(Tarefa 2)** Scripts de transformação (`Transform`) que enriquecem os dados cruzando com o cadastro oficial (CADOP), validam regras de negócio e geram as agregações estatísticas.
-* **`2_banco_dados/`**: **(Tarefa 3)** Scripts SQL para modelagem do banco de dados relacional e queries analíticas.
-* **`3_interface_web/`**: **(Tarefa 4)** Aplicação Web (Frontend Vue.js + Backend Python) para visualização dos dados processados.
+* **`1_etl_ans/`** **(Tarefa 1)**
+    * *Função:* Extração (`Extract`).
+    * *Descrição:* Scripts responsáveis por varrer o site da ANS, baixar e consolidar os dados brutos contábeis.
+* **`2_transformacao/`** **(Tarefa 2)**
+    * *Função:* Transformação (`Transform`).
+    * *Descrição:* Scripts que enriquecem os dados cruzando com o cadastro oficial (CADOP), validam regras de negócio e geram as agregações estatísticas.
+* **`2_banco_dados/`** **(Tarefa 3)**
+    * *Função:* Modelagem (`Load/Storage`).
+    * *Descrição:* Scripts SQL para modelagem do banco de dados relacional e queries analíticas.
+* **`3_interface_web/`** **(Tarefa 4)**
+    * *Função:* Visualização (`Frontend`).
+    * *Descrição:* Aplicação Web (Frontend Vue.js + Backend Python) para visualização dos dados processados.
 
 ---
 
@@ -18,6 +26,7 @@ O projeto foi organizado em módulos independentes que funcionam como um Pipelin
 Para garantir a integridade e rastreabilidade dos dados, a execução deve seguir a ordem abaixo:
 
 ### Passo 1: Extração de Dados Brutos (ETL)
+
 Este script conecta-se ao servidor FTP da ANS, identifica os 3 trimestres mais recentes, baixa os arquivos ZIP (lidando com estruturas de pastas variadas) e consolida tudo em um único CSV.
 
 ```bash
@@ -27,21 +36,31 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Entrada
-- Dados públicos do site da ANS  
-  (<https://dadosabertos.ans.gov.br/>)
+- **Entrada:**  
+  Dados do site da ANS  
+  https://dadosabertos.ans.gov.br/
 
-### Saída
-- `output/consolidado_despesas.csv`
+- **Saída:**  
+  `output/consolidado_despesas.csv`
 
-### Nota
-Este arquivo mantém a coluna **RegistroANS** como chave primária e preenche **CNPJ** e **Razão Social** com `"N/A"`, pois os arquivos contábeis originais não possuem essas informações.
+- **Nota:**  
+  O arquivo gerado mantém a coluna **RegistroANS** como **chave primária**.  
+  As colunas **CNPJ** e **Razão Social** são preenchidas com `"N/A"`, pois os arquivos contábeis originais não disponibilizam essas informações.
 
-### Passo 2: Transformação, Enriquecimento e Validação
-Este script lê o arquivo bruto gerado no passo anterior, baixa o Cadastro de Operadoras (CADOP), realiza o cruzamento de dados, aplica validações e gera estatísticas.
+---
+
+## Passo 2: Transformação, Enriquecimento e Validação
+
+- Lê o arquivo bruto gerado no Passo 1.
+- Baixa o **Cadastro de Operadoras (CADOP)**.
+- Realiza o **cruzamento dos dados** pelo campo **RegistroANS**.
+- Enriquece os registros com **CNPJ** e **Razão Social**.
+- Aplica **validações de consistência** nos dados.
+- Gera **estatísticas e métricas** para análise final.
+
 
 ```bash
-cd 1_etl_ans
+# Partindo da pasta anterior (1_etl_ans)
 cd ../2_transformacao
 pip install -r requirements.txt
 python main.py
@@ -63,69 +82,90 @@ python main.py
 - Arquivo **ZIP** final com os resultados.
 
 
-# 🧠 Trade-offs e Decisões Técnicas  
-**(Documentação Obrigatória)**
+## 🧠 Trade-offs e Decisões Técnicas (Documentação Obrigatória)
 
-Este documento descreve as principais decisões técnicas adotadas no pipeline de dados e suas justificativas.
+Abaixo estão as justificativas para as abordagens técnicas adotadas, conforme solicitado na avaliação.
 
 ---
 
-## 1. Estratégia de Join e Integridade Referencial  
-### 📌 Uso do *RegistroANS*
+## 1. Estratégia de Join e Integridade Referencial
 
-### Decisão
-Utilizar o **RegistroANS** como chave de ligação entre a etapa de extração e a de enriquecimento dos dados.
+### 🔗 Decisão (Chave de Ligação)
+**Utilizar o RegistroANS como chave (Foreign Key) em vez do CNPJ.**
 
-### Justificativa
-Os arquivos de demonstrações contábeis da ANS não possuem **CNPJ** nem **Razão Social**, apenas o identificador `REG_ANS`. Assim, qualquer validação cadastral na etapa inicial seria inviável.
+**Justificativa:**  
+Os arquivos contábeis brutos da ANS (fonte primária) não contêm o campo **CNPJ**. Dessa forma, qualquer tentativa de realizar o *join* por CNPJ seria inviável na etapa inicial do pipeline.  
+O **RegistroANS** é o identificador único, oficial e imutável garantido pela própria agência reguladora, sendo a escolha mais segura para garantir integridade referencial.
 
-### Solução
-- **Tarefa 1:** extração fiel dos dados contábeis, preservando o `RegistroANS`.
-- **Tarefa 2:** enriquecimento com o **Cadastro de Operadoras (CADOP)** oficial da ANS, via **Left Join**.
+---
 
-### Benefício
-Garante que os dados cadastrais utilizados sejam oficiais e elimina inconsistências causadas por erros manuais.
+### ⚙️ Decisão (Processamento do Join)
+**Utilização de `pandas.merge` (Hash Join em memória).**
+
+**Justificativa:**  
+O volume de dados consolidado (3 trimestres) somado ao Cadastro de Operadoras (≈ 1.200 registros) cabe confortavelmente em memória RAM (< 1 GB).  
+Nessas condições, o processamento em memória é **ordens de magnitude mais rápido** do que o uso de bancos de dados intermediários ou frameworks distribuídos, que introduziriam complexidade desnecessária.
+
+---
+
+### 📎 Tratamento de Registros “Sem Match”
+**Utilização de Left Join.**
+
+**Justificativa:**  
+A prioridade do projeto é preservar a **integridade dos dados financeiros**.  
+Caso uma operadora possua despesas registradas, mas não esteja presente no cadastro ativo (por exemplo, operadora extinta ou com status alterado), o registro financeiro é mantido e a **Razão Social é preenchida como "Desconhecida"**.  
+Essa abordagem evita a perda de informações e garante que o total consolidado de despesas permaneça correto.
 
 ---
 
 ## 2. Validação e Tratamento de Inconsistências
 
-### Datas
-Os arquivos apresentavam múltiplos formatos de data.  
-**Solução:** a data interna foi ignorada, utilizando-se a estrutura de diretórios da ANS como *Source of Truth* para definir **Ano** e **Trimestre**.
+### 💰 Valores Zerados ou Negativos
+**Solução:** Filtragem dos registros com `Valor > 0`.
 
-### Valores Zerados ou Negativos
-Registros com `Valor ≤ 0` foram removidos.  
-**Justificativa:** estornos e valores nulos distorcem métricas estatísticas e não agregam valor à análise de despesas.
-
-### CNPJs Inválidos
-A validação ocorre após o enriquecimento.  
-CNPJs inválidos são **logados**, mas mantidos caso possuam valores relevantes, evitando mascarar o volume financeiro real do setor.
+**Justificativa:**  
+Valores zerados, nulos ou negativos geralmente representam estornos ou lançamentos não efetivos.  
+Manter esses registros distorceria métricas estatísticas como **média** e **desvio padrão**, comprometendo a análise financeira.
 
 ---
 
-## 3. Processamento de Dados  
-### ⚖️ Memória vs. Stream
+### 🧾 CNPJs Inválidos
+**Solução:** Validação na etapa 2 (pós-enriquecimento) com *logging* para auditoria.
 
-### Decisão
-Processamento **híbrido**.
-
-- **Download:** via stream (chunks de 8 KB) para evitar consumo excessivo de memória.
-- **Processamento:** em memória (Pandas).
-
-### Justificativa
-O volume total dos dados (MBs) é plenamente comportável em RAM, tornando o processamento in-memory mais simples e eficiente do que soluções distribuídas como Spark ou Dask para este contexto.
+**Justificativa:**  
+CNPJs matematicamente inválidos são registrados em log, mas **não removidos do relatório final**.  
+A exclusão desses dados mascararia o volume financeiro real do setor, o que seria um erro crítico em uma análise contábil e regulatória.
 
 ---
 
-## ✅ Conclusão
-As decisões priorizam confiabilidade, integridade dos dados e performance adequada ao volume real do problema.
+## 3. Estratégia de Ordenação e Agregação
 
-~~## 🛠 Tecnologias Utilizadas
+### 📊 Decisão de Ordenação
+**Uso de `sort_values` (Quicksort) em memória.**
 
-* **Linguagem:** [Python](https://www.python.org/)
-* **Bibliotecas Principais:**
-    pandas: Manipulação de dados, agregações estatísticas e IO.
-    requests: Requisições HTTP e download via stream.
-    beautifulsoup4: Web Scraping para mapear diretórios do servidor FTP.
-    zipfile / shutil: Manipulação de arquivos compactados e sistema de arquivos.
+**Justificativa:**  
+Após a agregação (por Operadora e UF), o dataset final contém apenas **alguns milhares de linhas**.  
+Algoritmos de ordenação em memória com complexidade **O(N log N)** são praticamente instantâneos nesse cenário, tornando desnecessárias técnicas como *external sort* ou indexação em banco de dados.
+
+---
+
+### 📈 Métricas Estatísticas Escolhidas
+Além da **soma total de despesas**, foram calculadas:
+
+- **Média Trimestral**
+- **Desvio Padrão**
+
+**Objetivo:**  
+Identificar operadoras com **volatilidade financeira atípica**, como gastos concentrados em um único trimestre, o que pode indicar eventos extraordinários ou inconsistências operacionais.
+
+---
+
+## 🛠 Tecnologias Utilizadas
+
+### 🔤 Linguagem
+- **Python 3.10+**
+
+### 📚 Bibliotecas Principais
+- **pandas**: Manipulação de dados, agregações estatísticas e operações de entrada/saída (IO).
+- **requests**: Requisições HTTP e download de arquivos via *stream*.
+- **zipfile / shutil**: Manipulação e extração de arquivos compactados.
