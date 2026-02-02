@@ -95,110 +95,174 @@ Para verificar os resultados das queries analíticas via terminal:
 psql -h localhost -U postgres -d intuitive_care_db -f 3_queries_analiticas.sql
 ```
 
-## 🧠 Trade-offs e Decisões Técnicas (Documentação Obrigatória)
+# 🧠 Trade-offs e Decisões Técnicas  
+**Documentação Obrigatória**
 
-Abaixo estão as justificativas para as abordagens técnicas adotadas em cada etapa do desafio.
-
----
-
-#### 📋 Tarefa 1: Extração (ETL)
-
-### Scraping Dinâmico vs URL Estática
-
-- **Decisão:** Scraping dinâmico com **BeautifulSoup**.
-
-- **Justificativa:**  
-  As URLs no site da ANS mudam frequentemente (troca de ano ou versão do arquivo).  
-  O script varre automaticamente a estrutura de pastas do FTP para localizar o dado mais recente, tornando a solução **resiliente a mudanças estruturais** e reduzindo manutenção manual.
+Este documento descreve as principais decisões técnicas adotadas no pipeline de dados, destacando os trade-offs entre performance, qualidade de dados, simplicidade e escalabilidade.
 
 ---
 
-#### 📋 Tarefa 2: Transformação e Enriquecimento
+## 1. Processamento e Extração (ETL)
 
-### 1. Estratégia de Join e Integridade
+### ⚡ Processamento: Memória vs. Incremental vs. Stream
 
-- **Decisão:** Utilizar o **RegistroANS** como chave (Foreign Key) em vez do CNPJ.
+**Decisão:** Abordagem híbrida — *Download via Stream* + *Processamento In-Memory*.
 
-  - **Justificativa:**  
-    Os arquivos contábeis brutos não contêm CNPJ.  
-    O **RegistroANS** é o identificador único e imutável definido pela agência reguladora, garantindo integridade referencial.
+**Justificativa:**
 
-- **Decisão:** Utilização de `pandas.merge` (**Hash Join em memória**).
+- **Download:**  
+  Os arquivos ZIP são baixados em *chunks* de 8 KB, reduzindo picos de memória e tornando o processo mais resiliente a falhas de rede ou arquivos inesperadamente grandes.
 
-  - **Justificativa:**  
-    O volume total de dados, somado ao cadastro (≈ 1.200 registros), cabe confortavelmente na RAM (< 1 GB).  
-    O processamento em memória é **ordens de magnitude mais rápido** do que o uso de bancos intermediários ou escrita em disco.
-
----
-
-### 2. Validação e Tratamento de Dados
-
-- **CNPJs inválidos:** Mantidos, com geração de logs de aviso.
-
-  - **Justificativa:**  
-    A exclusão desses registros mascararia o volume financeiro real do setor.  
-    Priorizou-se a **fidelidade contábil** em detrimento da pureza cadastral.
-
-- **Valores zerados:** Removidos.
-
-  - **Justificativa:**  
-    Esses registros distorcem métricas estatísticas como média, soma e desvio padrão, impactando análises analíticas.
+- **Processamento:**  
+  O volume consolidado dos três trimestres, mesmo após descompactação, permanece abaixo de 2 GB, cabendo confortavelmente na memória RAM.  
+  O uso de operações vetorizadas do **Pandas (In-Memory)** é ordens de magnitude mais rápido do que abordagens baseadas em disco ou frameworks distribuídos (ex: Spark), que seriam excessivos para esse cenário.
 
 ---
 
-#### 📋 Tarefa 3: Banco de Dados (SQL)
+### 📅 Inconsistência de Datas
 
-### 1. Modelagem: Normalização vs Desnormalização
+**Problema:**  
+A coluna de data nos CSVs originais apresenta múltiplos formatos inconsistentes (`1T2024`, `01/01/2024`, `jan/24`).
 
-- **Escolha:** Abordagem híbrida (**Star Schema**).
+**Decisão:**  
+Ignorar a data interna dos arquivos.
 
-  - **Tabela Dimensão (`operadoras`):**  
-    Armazena dados cadastrais estáveis das operadoras.
+**Solução:**  
+Utilizar a estrutura de diretórios do FTP da ANS como *Source of Truth*, injetando programaticamente as colunas **Ano** e **Trimestre**.
 
-  - **Tabela Fato (`despesas_contabeis`):**  
-    Armazena eventos financeiros, referenciando a operadora por ID.
-
-  - **Tabela Agregada (`despesas_agregadas_final`):**  
-    Estrutura desnormalizada para leitura e análise rápida.
-
-- **Justificativa:**  
-  As despesas crescem exponencialmente ao longo do tempo, enquanto os dados cadastrais permanecem majoritariamente estáveis.  
-  Repetir strings como **Razão Social** na tabela de fatos aumentaria uso de armazenamento e I/O.  
-  A normalização otimiza atualizações cadastrais, enquanto a tabela agregada acelera consultas analíticas.
+**Benefício:**  
+Elimina ambiguidades e garante consistência temporal 100% confiável.
 
 ---
 
-### 2. Tipos de Dados (Data Types)
+## 2. Transformação e Enriquecimento
 
-- **Valores Monetários:** `DECIMAL(15, 2)` vs `FLOAT`.
+### 🔗 Estratégia de Join e Integridade (RegistroANS)
 
-  - **Decisão:** `DECIMAL(15, 2)`.
+**Decisão:**  
+Utilizar `RegistroANS` como chave primária de ligação, com `pandas.merge` (Hash Join).
 
-  - **Justificativa:**  
-    Tipos `FLOAT` utilizam ponto flutuante binário, introduzindo erros de arredondamento em operações financeiras.  
-    `DECIMAL` garante **precisão exata**, essencial para dados contábeis.
+**Problema:**  
+Os arquivos contábeis não possuem CNPJ, apenas o identificador `REG_ANS`.
 
-- **Datas:** `DATE` vs `VARCHAR`.
+**Solução:**  
 
-  - **Decisão:** `DATE`.
+- **Tarefa 1:** Extração fiel dos dados contábeis.  
+- **Tarefa 2:** Camada de *Trusted Data*, com download do CADOP oficial e *Left Join* via `RegistroANS`.
 
-  - **Justificativa:**  
-    `VARCHAR` impede ordenação cronológica correta e dificulta indexação.  
-    O trimestre foi convertido para `DATE` (dia 01 do mês inicial do trimestre), facilitando séries temporais, filtros e índices.
+**Benefícios:**
+
+- Garante integridade referencial sem depender de dados inexistentes na fonte.
+- Hash Join em memória apresenta complexidade **O(N)**, ideal para datasets deste porte.
 
 ---
 
-### 3. Tratamento de Inconsistências na Importação
+### 🧾 Tratamento de CNPJs Inválidos
 
-- **Encoding:**  
-  Conversão explícita de **LATIN1** (CADOP) e **UTF-8** (Despesas) nos comandos `COPY`, evitando corrupção de caracteres.
+**Trade-off:** Fidelidade contábil vs. pureza cadastral.
 
-- **Limpeza de Strings:**  
-  Uso de `REGEXP_REPLACE` no SQL para sanitizar o campo **RegistroANS** antes da conversão para inteiro.
+**Decisão:**  
+Manter os registros, mas gerar *log de auditoria*.
 
-- **Truncagem de UF:**  
-  Tratamento de registros onde a UF vinha como `"N/A"` (3 caracteres) para uma coluna `CHAR(2)`.  
-  Aplicou-se `LEFT(uf, 2)` combinado com `NULLIF`, garantindo que o pipeline não falhasse.
+**Justificativa:**
+
+- **Prós:**  
+  O volume financeiro agregado do setor permanece correto. Remover linhas distorceria o balanço contábil.
+- **Contras:**  
+  O dataset final contém dados cadastrais inconsistentes, que devem ser tratados na camada de visualização ou consumo.
+
+---
+
+### 🔢 Tratamento de Valores Zerados ou Negativos
+
+**Decisão:**  
+Filtragem rigorosa — `valor > 0`.
+
+**Justificativa:**  
+Valores negativos (estornos) ou nulos distorcem métricas estatísticas como **média** e **desvio padrão**, que são centrais para a análise solicitada.  
+A remoção garante relevância estatística e coerência analítica.
+
+---
+
+### 📉 Estratégia de Ordenação
+
+**Decisão:**  
+Ordenação em memória com `df.sort_values` (Quicksort interno).
+
+**Justificativa:**  
+Após a agregação (`GROUP BY`), o volume de dados reduz-se drasticamente (para poucos milhares de linhas).  
+O custo computacional da ordenação em memória torna-se desprezível, não justificando *external sort* ou uso de banco de dados apenas para essa etapa.
+
+---
+
+## 3. Banco de Dados (SQL)
+
+### 🏗️ Modelagem: Normalização — Opção A vs. Opção B
+
+**Decisão:**  
+**Opção B — Modelo Normalizado (Star Schema)**
+
+- **Tabela Dimensão:** `operadoras` (dados cadastrais)
+- **Tabela Fato:** `despesas_contabeis` (eventos financeiros)
+
+**Justificativa:**
+
+- **Volume:**  
+  As despesas crescem exponencialmente a cada trimestre, enquanto os dados cadastrais são estáveis.
+- **Eficiência:**  
+  Evita repetição massiva de strings como *Razão Social*, reduzindo armazenamento e I/O.
+- **Manutenibilidade:**  
+  Atualizações cadastrais exigem alteração em apenas uma linha, garantindo consistência (ACID).
+
+---
+
+### 💲 Tipos de Dados: DECIMAL vs. FLOAT
+
+**Decisão:**  
+`DECIMAL(15,2)`
+
+**Justificativa:**  
+Tipos `FLOAT` utilizam ponto flutuante binário (IEEE 754), introduzindo erros de precisão (`0.1 + 0.2 ≠ 0.3`).  
+Para dados financeiros, **precisão exata é obrigatória**, tornando `DECIMAL` a escolha correta.
+
+---
+
+### 🗓️ Tipos de Dados: DATE vs. VARCHAR
+
+**Decisão:**  
+`DATE`
+
+**Justificativa:**  
+
+- Permite ordenação cronológica correta.
+- Viabiliza uso eficiente de funções de data, indexação e particionamento.
+- O trimestre foi convertido para o primeiro dia do mês correspondente  
+  *(ex: 1º trimestre → `2023-01-01`)*.
+
+---
+
+## 4. Queries Analíticas
+
+### 🧠 Operadoras Acima da Média em 2 ou Mais Trimestres
+
+**Decisão:**  
+Uso de **CTEs (Common Table Expressions)** + agregação com `HAVING`.
+
+**Estratégia:**
+
+1. **CTE `media_trimestral`:**  
+   Calcula a média global de despesas por trimestre.
+2. **CTE `performance`:**  
+   Compara cada operadora com a média do trimestre (flag 0 ou 1).
+3. **Query final:**  
+   Soma os flags e filtra operadoras com `SUM >= 2`.
+
+**Justificativa:**
+
+- **Legibilidade:**  
+  CTEs tornam a query linear, clara e autodocumentável.
+- **Performance:**  
+  O *Query Planner* do PostgreSQL consegue materializar as CTEs de forma eficiente, evitando recálculos redundantes da média global.
 
 ---
 
