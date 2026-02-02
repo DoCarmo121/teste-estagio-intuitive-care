@@ -8,16 +8,24 @@ O projeto foi organizado em módulos independentes que funcionam como um Pipelin
 
 * **`1_etl_ans/`** **(Tarefa 1)**
     * *Função:* Extração (`Extract`).
-    * *Descrição:* Scripts responsáveis por varrer o site da ANS, baixar e consolidar os dados brutos contábeis.
+    * *Descrição:* Scripts responsáveis por varrer o site da ANS via scraping, baixar e consolidar os dados brutos contábeis.
 * **`2_transformacao/`** **(Tarefa 2)**
     * *Função:* Transformação (`Transform`).
-    * *Descrição:* Scripts que enriquecem os dados cruzando com o cadastro oficial (CADOP), validam regras de negócio e geram as agregações estatísticas.
-* **`2_banco_dados/`** **(Tarefa 3)**
-    * *Função:* Modelagem (`Load/Storage`).
-    * *Descrição:* Scripts SQL para modelagem do banco de dados relacional e queries analíticas.
-* **`3_interface_web/`** **(Tarefa 4)**
+    * *Descrição:* Scripts que enriquecem os dados cruzando com o cadastro oficial (CADOP), validam regras de negócio, geram as agregações estatísticas e **persistem dados intermediários**.
+* **`3_banco_dados/`** **(Tarefa 3)**
+    * *Função:* Modelagem e Carga (`Load/Storage`).
+    * *Descrição:* Orquestrador em Python e scripts SQL para modelagem do banco de dados relacional (PostgreSQL) e execução de queries analíticas.
+* **`4_interface_web/`** **(Tarefa 4)**
     * *Função:* Visualização (`Frontend`).
     * *Descrição:* Aplicação Web (Frontend Vue.js + Backend Python) para visualização dos dados processados.
+
+---
+
+## ⚙️ Pré-requisitos
+
+* **Python 3.10+**
+* **PostgreSQL 14+** (Rodando localmente na porta 5432)
+* **Gerenciador de pacotes:** `pip`
 
 ---
 
@@ -36,28 +44,18 @@ pip install -r requirements.txt
 python main.py
 ```
 
-- **Entrada:**  
-  Dados do site da ANS  
-  https://dadosabertos.ans.gov.br/
+- **Saída:** `output/consolidado_despesas.csv`
 
-- **Saída:**  
-  `output/consolidado_despesas.csv`
-
-- **Nota:**  
-  O arquivo gerado mantém a coluna **RegistroANS** como **chave primária**.  
+- **Nota:** O arquivo gerado mantém a coluna **RegistroANS** como chave primária.  
   As colunas **CNPJ** e **Razão Social** são preenchidas com `"N/A"`, pois os arquivos contábeis originais não disponibilizam essas informações.
 
 ---
 
-## Passo 2: Transformação, Enriquecimento e Validação
+### Passo 2: Transformação, Enriquecimento e Validação
 
-- Lê o arquivo bruto gerado no Passo 1.
-- Baixa o **Cadastro de Operadoras (CADOP)**.
-- Realiza o **cruzamento dos dados** pelo campo **RegistroANS**.
-- Enriquece os registros com **CNPJ** e **Razão Social**.
-- Aplica **validações de consistência** nos dados.
-- Gera **estatísticas e métricas** para análise final.
+Nesta etapa, o script lê o arquivo bruto, baixa o **Cadastro de Operadoras (CADOP)**, realiza o cruzamento de dados e gera arquivos para análise.
 
+**Atualização:** O script agora salva uma cópia do CADOP bruto (`relatorio_cadop.csv`) para ser consumido posteriormente pelo Banco de Dados, evitando necessidade de novo scraping.
 
 ```bash
 # Partindo da pasta anterior (1_etl_ans)
@@ -66,106 +64,156 @@ pip install -r requirements.txt
 python main.py
 ```
 
- ## 4. Fluxo de Processamento — Tarefa 2
+### Saídas Geradas
 
-### Entrada
-- `../1_etl_ans/output/consolidado_despesas.csv`
+1. `output/despesas_agregadas.csv`  
+   *(Dados processados e somados por UF).*
 
-### Processamento
-- Download automático do **CADOP (Operadoras Ativas)**.
-- Join entre as tabelas utilizando o **RegistroANS**.
-- Validação de **CNPJs** e **valores contábeis**.
-- Cálculo de **média trimestral** e **desvio padrão**.
+2. `output/Teste_JoaoGabriel.zip`  
+   *(Arquivo final compactado).*
 
-### Saída
-- `output/despesas_agregadas.csv`
-- Arquivo **ZIP** final com os resultados.
+3. `output/relatorio_cadop.csv`  
+   **(Novo:** Arquivo bruto para carga no Banco de Dados).*
 
+---
+
+### Passo 3: Banco de Dados e Análise SQL
+
+Esta etapa carrega os dados processados em um banco **PostgreSQL**.  
+Foi desenvolvido um orquestrador em Python que resolve problemas de permissão de arquivos no Linux (copiando temporariamente para `/tmp`) e injeta os caminhos absolutos corretos nos scripts SQL.
+
+```bash
+cd ../3_banco_dados
+pip install -r requirements.txt
+python main.py
+```
+
+O script solicitará seu usuário e senha do PostgreSQL local, criará o banco intuitive_care_db e executará a carga automaticamente.
+Para verificar os resultados das queries analíticas via terminal:
+
+```bash
+psql -h localhost -U postgres -d intuitive_care_db -f 3_queries_analiticas.sql
+```
 
 ## 🧠 Trade-offs e Decisões Técnicas (Documentação Obrigatória)
 
-Abaixo estão as justificativas para as abordagens técnicas adotadas, conforme solicitado na avaliação.
+Abaixo estão as justificativas para as abordagens técnicas adotadas em cada etapa do desafio.
 
 ---
 
-## 1. Estratégia de Join e Integridade Referencial
+#### 📋 Tarefa 1: Extração (ETL)
 
-### 🔗 Decisão (Chave de Ligação)
-**Utilizar o RegistroANS como chave (Foreign Key) em vez do CNPJ.**
+### Scraping Dinâmico vs URL Estática
 
-**Justificativa:**  
-Os arquivos contábeis brutos da ANS (fonte primária) não contêm o campo **CNPJ**. Dessa forma, qualquer tentativa de realizar o *join* por CNPJ seria inviável na etapa inicial do pipeline.  
-O **RegistroANS** é o identificador único, oficial e imutável garantido pela própria agência reguladora, sendo a escolha mais segura para garantir integridade referencial.
+- **Decisão:** Scraping dinâmico com **BeautifulSoup**.
 
----
-
-### ⚙️ Decisão (Processamento do Join)
-**Utilização de `pandas.merge` (Hash Join em memória).**
-
-**Justificativa:**  
-O volume de dados consolidado (3 trimestres) somado ao Cadastro de Operadoras (≈ 1.200 registros) cabe confortavelmente em memória RAM (< 1 GB).  
-Nessas condições, o processamento em memória é **ordens de magnitude mais rápido** do que o uso de bancos de dados intermediários ou frameworks distribuídos, que introduziriam complexidade desnecessária.
+- **Justificativa:**  
+  As URLs no site da ANS mudam frequentemente (troca de ano ou versão do arquivo).  
+  O script varre automaticamente a estrutura de pastas do FTP para localizar o dado mais recente, tornando a solução **resiliente a mudanças estruturais** e reduzindo manutenção manual.
 
 ---
 
-### 📎 Tratamento de Registros “Sem Match”
-**Utilização de Left Join.**
+#### 📋 Tarefa 2: Transformação e Enriquecimento
 
-**Justificativa:**  
-A prioridade do projeto é preservar a **integridade dos dados financeiros**.  
-Caso uma operadora possua despesas registradas, mas não esteja presente no cadastro ativo (por exemplo, operadora extinta ou com status alterado), o registro financeiro é mantido e a **Razão Social é preenchida como "Desconhecida"**.  
-Essa abordagem evita a perda de informações e garante que o total consolidado de despesas permaneça correto.
+### 1. Estratégia de Join e Integridade
 
----
+- **Decisão:** Utilizar o **RegistroANS** como chave (Foreign Key) em vez do CNPJ.
 
-## 2. Validação e Tratamento de Inconsistências
+  - **Justificativa:**  
+    Os arquivos contábeis brutos não contêm CNPJ.  
+    O **RegistroANS** é o identificador único e imutável definido pela agência reguladora, garantindo integridade referencial.
 
-### 💰 Valores Zerados ou Negativos
-**Solução:** Filtragem dos registros com `Valor > 0`.
+- **Decisão:** Utilização de `pandas.merge` (**Hash Join em memória**).
 
-**Justificativa:**  
-Valores zerados, nulos ou negativos geralmente representam estornos ou lançamentos não efetivos.  
-Manter esses registros distorceria métricas estatísticas como **média** e **desvio padrão**, comprometendo a análise financeira.
+  - **Justificativa:**  
+    O volume total de dados, somado ao cadastro (≈ 1.200 registros), cabe confortavelmente na RAM (< 1 GB).  
+    O processamento em memória é **ordens de magnitude mais rápido** do que o uso de bancos intermediários ou escrita em disco.
 
 ---
 
-### 🧾 CNPJs Inválidos
-**Solução:** Validação na etapa 2 (pós-enriquecimento) com *logging* para auditoria.
+### 2. Validação e Tratamento de Dados
 
-**Justificativa:**  
-CNPJs matematicamente inválidos são registrados em log, mas **não removidos do relatório final**.  
-A exclusão desses dados mascararia o volume financeiro real do setor, o que seria um erro crítico em uma análise contábil e regulatória.
+- **CNPJs inválidos:** Mantidos, com geração de logs de aviso.
 
----
+  - **Justificativa:**  
+    A exclusão desses registros mascararia o volume financeiro real do setor.  
+    Priorizou-se a **fidelidade contábil** em detrimento da pureza cadastral.
 
-## 3. Estratégia de Ordenação e Agregação
+- **Valores zerados:** Removidos.
 
-### 📊 Decisão de Ordenação
-**Uso de `sort_values` (Quicksort) em memória.**
-
-**Justificativa:**  
-Após a agregação (por Operadora e UF), o dataset final contém apenas **alguns milhares de linhas**.  
-Algoritmos de ordenação em memória com complexidade **O(N log N)** são praticamente instantâneos nesse cenário, tornando desnecessárias técnicas como *external sort* ou indexação em banco de dados.
+  - **Justificativa:**  
+    Esses registros distorcem métricas estatísticas como média, soma e desvio padrão, impactando análises analíticas.
 
 ---
 
-### 📈 Métricas Estatísticas Escolhidas
-Além da **soma total de despesas**, foram calculadas:
+#### 📋 Tarefa 3: Banco de Dados (SQL)
 
-- **Média Trimestral**
-- **Desvio Padrão**
+### 1. Modelagem: Normalização vs Desnormalização
 
-**Objetivo:**  
-Identificar operadoras com **volatilidade financeira atípica**, como gastos concentrados em um único trimestre, o que pode indicar eventos extraordinários ou inconsistências operacionais.
+- **Escolha:** Abordagem híbrida (**Star Schema**).
+
+  - **Tabela Dimensão (`operadoras`):**  
+    Armazena dados cadastrais estáveis das operadoras.
+
+  - **Tabela Fato (`despesas_contabeis`):**  
+    Armazena eventos financeiros, referenciando a operadora por ID.
+
+  - **Tabela Agregada (`despesas_agregadas_final`):**  
+    Estrutura desnormalizada para leitura e análise rápida.
+
+- **Justificativa:**  
+  As despesas crescem exponencialmente ao longo do tempo, enquanto os dados cadastrais permanecem majoritariamente estáveis.  
+  Repetir strings como **Razão Social** na tabela de fatos aumentaria uso de armazenamento e I/O.  
+  A normalização otimiza atualizações cadastrais, enquanto a tabela agregada acelera consultas analíticas.
+
+---
+
+### 2. Tipos de Dados (Data Types)
+
+- **Valores Monetários:** `DECIMAL(15, 2)` vs `FLOAT`.
+
+  - **Decisão:** `DECIMAL(15, 2)`.
+
+  - **Justificativa:**  
+    Tipos `FLOAT` utilizam ponto flutuante binário, introduzindo erros de arredondamento em operações financeiras.  
+    `DECIMAL` garante **precisão exata**, essencial para dados contábeis.
+
+- **Datas:** `DATE` vs `VARCHAR`.
+
+  - **Decisão:** `DATE`.
+
+  - **Justificativa:**  
+    `VARCHAR` impede ordenação cronológica correta e dificulta indexação.  
+    O trimestre foi convertido para `DATE` (dia 01 do mês inicial do trimestre), facilitando séries temporais, filtros e índices.
+
+---
+
+### 3. Tratamento de Inconsistências na Importação
+
+- **Encoding:**  
+  Conversão explícita de **LATIN1** (CADOP) e **UTF-8** (Despesas) nos comandos `COPY`, evitando corrupção de caracteres.
+
+- **Limpeza de Strings:**  
+  Uso de `REGEXP_REPLACE` no SQL para sanitizar o campo **RegistroANS** antes da conversão para inteiro.
+
+- **Truncagem de UF:**  
+  Tratamento de registros onde a UF vinha como `"N/A"` (3 caracteres) para uma coluna `CHAR(2)`.  
+  Aplicou-se `LEFT(uf, 2)` combinado com `NULLIF`, garantindo que o pipeline não falhasse.
 
 ---
 
 ## 🛠 Tecnologias Utilizadas
 
-### 🔤 Linguagem
-- **Python 3.10+**
+### 🔤 Linguagem e Bibliotecas
 
-### 📚 Bibliotecas Principais
-- **pandas**: Manipulação de dados, agregações estatísticas e operações de entrada/saída (IO).
-- **requests**: Requisições HTTP e download de arquivos via *stream*.
-- **zipfile / shutil**: Manipulação e extração de arquivos compactados.
+- **Python 3.10+**
+- **pandas:** Manipulação de dados e agregações.
+- **requests / BeautifulSoup:** Scraping e download de arquivos.
+- **psycopg2 / SQLAlchemy:** Conectividade com banco de dados.
+
+---
+
+### 🗄️ Banco de Dados
+
+- **PostgreSQL 14+**  
+  Banco de dados relacional utilizado para armazenamento, modelagem e análise analítica.
