@@ -9,7 +9,8 @@ from urllib.parse import urljoin
 import sys
 
 # --- CONFIGURACOES ---
-INPUT_FILE = "../1_etl_ans/output/consolidado_despesas.csv"
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+INPUT_FILE = os.path.abspath(os.path.join(CURRENT_DIR, "..", "1_etl_ans", "output", "consolidado_despesas.csv"))
 BASE_FTP = "https://dadosabertos.ans.gov.br/FTP/PDA/"
 OUTPUT_DIR = "output"
 OUTPUT_CSV = os.path.join(OUTPUT_DIR, "despesas_agregadas.csv")
@@ -84,8 +85,12 @@ def baixar_cadop():
         response = requests.get(url, timeout=60)
         response.raise_for_status()
 
-        # Le o CSV tratando erros de encoding
-        df = pd.read_csv(StringIO(response.text), sep=';', encoding='latin-1', dtype=str, on_bad_lines='skip')
+        try:
+            texto_csv = response.content.decode('latin-1')
+        except UnicodeDecodeError:
+            texto_csv = response.content.decode('cp1252', errors='replace')
+
+        df = pd.read_csv(StringIO(texto_csv), sep=';', dtype=str, on_bad_lines='skip')
 
         # Normalizacao de colunas
         df.columns = [c.strip().upper().replace('RAZAO_SOCIAL', 'RazaoSocial') for c in df.columns]
@@ -102,16 +107,15 @@ def baixar_cadop():
         cols = ['RegistroANS', 'CNPJ', 'RazaoSocial', 'Modalidade', 'UF']
         df_limpo = df[[c for c in cols if c in df.columns]]
 
-        # Salva o arquivo intermediario para uso na proxima tarefa (Banco de Dados)
         print(f"Salvando copia local do CADOP: {OUTPUT_CADOP}")
-        df_limpo.to_csv(OUTPUT_CADOP, index=False, sep=';', encoding='latin-1')
+
+        df_limpo.to_csv(OUTPUT_CADOP, index=False, sep=';', encoding='utf-8')
 
         return df_limpo
 
     except Exception as e:
         print(f"Erro no processamento do CADOP: {e}")
         return None
-
 
 def enriquecer_dados(df_despesas, df_cadop):
     print("Cruzando dados (Join)...")
@@ -153,8 +157,8 @@ if __name__ == "__main__":
         if not os.path.exists(INPUT_FILE):
             raise FileNotFoundError("Arquivo da Tarefa 1 nao encontrado. Execute a etapa anterior primeiro.")
 
-        df_raw = pd.read_csv(INPUT_FILE, sep=";", dtype=str)
-        # Remove colunas antigas para evitar duplicidade no merge
+        df_raw = pd.read_csv(INPUT_FILE, sep=";", dtype=str, encoding='utf-8')
+
         df_raw = df_raw.drop(columns=['CNPJ', 'RazaoSocial'], errors='ignore')
 
         # Baixa CADOP e salva em disco

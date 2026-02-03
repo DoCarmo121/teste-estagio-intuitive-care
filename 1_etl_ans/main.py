@@ -10,8 +10,8 @@ import traceback
 
 BASE_URL = "https://dadosabertos.ans.gov.br/FTP/PDA/"
 OUTPUT_DIR = "downloads"
-FINAL_CSV = "output/consolidado_despesas.csv"
-FINAL_ZIP = "output/consolidado_despesas.zip"
+FINAL_CSV = os.path.join("output", "consolidado_despesas.csv")
+FINAL_ZIP = os.path.join("output", "consolidado_despesas.zip")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs("output", exist_ok=True)
@@ -248,7 +248,6 @@ if __name__ == '__main__':
 
         print("\nSalvando saída da Tarefa 1...")
 
-        # Salvamos o RegistroANS junto para permitir o Join na etapa seguinte
         cols_para_salvar = ['RegistroANS', 'CNPJ', 'RazaoSocial', 'Ano', 'Trimestre', 'ValorDespesas']
 
         df[cols_para_salvar].to_csv(FINAL_CSV, index=False, sep=';', encoding='utf-8')
@@ -256,7 +255,7 @@ if __name__ == '__main__':
         with zipfile.ZipFile(FINAL_ZIP, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.write(FINAL_CSV, arcname="consolidado_despesas.csv")
 
-        shutil.rmtree(OUTPUT_DIR)
+        shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
         print("TAREFA 1 CONCLUÍDA (Com RegistroANS preservado!).")
     except Exception as e:
         traceback.print_exc()
