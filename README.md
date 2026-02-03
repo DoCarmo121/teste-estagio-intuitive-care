@@ -139,16 +139,19 @@ Você precisará de **dois terminais abertos simultaneamente**.
 ### 🐍 Terminal 1: Backend (API)
 
 ```bash
-cd ../4_interface_web/backend
+cd /4_interface_web/backend
 pip install -r requirements.txt
 python main.py
 ```
 
-- **Como testar:** O servidor iniciará em `http://localhost:8000`.
+- **Documentação e Testes (Swagger):** Acesse `http://localhost:8000/docs` para **visualizar e testar interativamente** 
+todas as rotas disponíveis da API:
+  - `GET /api/operadoras` — Lista paginada de operadoras  
+  - `GET /api/operadoras/{cnpj}` — Detalhes da operadora  
+  - `GET /api/operadoras/{cnpj}/despesas` — Histórico de despesas  
+  - `GET /api/estatisticas` — KPIs e dados para gráficos
 
-- **Documentação Interativa (Swagger):**  
-  Acesse `http://localhost:8000/docs` para visualizar e testar todas as rotas da API (Requisito 4.4).
-
+---
 
 ### 🎨 Terminal 2: Frontend (Dashboard)
 
