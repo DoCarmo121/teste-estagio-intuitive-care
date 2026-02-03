@@ -61,7 +61,10 @@ pip install -r requirements.txt
 python main.py
 ```
 
-- **Saída:** `output/consolidado_despesas.csv`
+### 📤 Saídas Geradas
+
+- `output/consolidado_despesas.csv`
+- `output/consolidado_despesas.csv` - Arquivo Compactado
 
 - **Nota:** O arquivo gerado mantém a coluna **RegistroANS** como chave primária.  
   As colunas **CNPJ** e **Razão Social** são preenchidas com `"N/A"`, pois os arquivos contábeis originais não disponibilizam essas informações.
