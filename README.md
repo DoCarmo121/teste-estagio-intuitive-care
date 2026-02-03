@@ -95,174 +95,126 @@ Para verificar os resultados das queries analíticas via terminal:
 psql -h localhost -U postgres -d intuitive_care_db -f 3_queries_analiticas.sql
 ```
 
-# 🧠 Trade-offs e Decisões Técnicas  
+# 🧠 Trade-offs e Decisões Técnicas
 **Documentação Obrigatória**
 
-Este documento descreve as principais decisões técnicas adotadas no pipeline de dados, destacando os trade-offs entre performance, qualidade de dados, simplicidade e escalabilidade.
+Este documento descreve as principais decisões técnicas adotadas no pipeline de dados e na aplicação web, destacando os trade-offs entre performance, qualidade de dados, simplicidade e escalabilidade.
 
 ---
 
 ## 1. Processamento e Extração (ETL)
 
 ### ⚡ Processamento: Memória vs. Incremental vs. Stream
-
 **Decisão:** Abordagem híbrida — *Download via Stream* + *Processamento In-Memory*.
-
 **Justificativa:**
-
-- **Download:**  
-  Os arquivos ZIP são baixados em *chunks* de 8 KB, reduzindo picos de memória e tornando o processo mais resiliente a falhas de rede ou arquivos inesperadamente grandes.
-
-- **Processamento:**  
-  O volume consolidado dos três trimestres, mesmo após descompactação, permanece abaixo de 2 GB, cabendo confortavelmente na memória RAM.  
-  O uso de operações vetorizadas do **Pandas (In-Memory)** é ordens de magnitude mais rápido do que abordagens baseadas em disco ou frameworks distribuídos (ex: Spark), que seriam excessivos para esse cenário.
-
----
+- **Download:** Os arquivos ZIP são baixados em *chunks* de 8 KB, reduzindo picos de memória e tornando o processo mais resiliente a falhas de rede.
+- **Processamento:** O volume consolidado dos três trimestres, mesmo após descompactação, permanece abaixo de 2 GB. O uso de operações vetorizadas do **Pandas (In-Memory)** é ordens de magnitude mais rápido do que abordagens baseadas em disco ou frameworks distribuídos (ex: Spark) para este cenário.
 
 ### 📅 Inconsistência de Datas
-
-**Problema:**  
-A coluna de data nos CSVs originais apresenta múltiplos formatos inconsistentes (`1T2024`, `01/01/2024`, `jan/24`).
-
-**Decisão:**  
-Ignorar a data interna dos arquivos.
-
-**Solução:**  
-Utilizar a estrutura de diretórios do FTP da ANS como *Source of Truth*, injetando programaticamente as colunas **Ano** e **Trimestre**.
-
-**Benefício:**  
-Elimina ambiguidades e garante consistência temporal 100% confiável.
+**Problema:** A coluna de data nos CSVs originais apresenta múltiplos formatos inconsistentes (`1T2024`, `01/01/2024`, `jan/24`).
+**Decisão:** Ignorar a data interna dos arquivos.
+**Solução:** Utilizar a estrutura de diretórios do FTP da ANS como *Source of Truth*, injetando programaticamente as colunas **Ano** e **Trimestre**.
+**Benefício:** Elimina ambiguidades e garante consistência temporal 100% confiável.
 
 ---
 
 ## 2. Transformação e Enriquecimento
 
 ### 🔗 Estratégia de Join e Integridade (RegistroANS)
-
-**Decisão:**  
-Utilizar `RegistroANS` como chave primária de ligação, com `pandas.merge` (Hash Join).
-
-**Problema:**  
-Os arquivos contábeis não possuem CNPJ, apenas o identificador `REG_ANS`.
-
-**Solução:**  
-
-- **Tarefa 1:** Extração fiel dos dados contábeis.  
-- **Tarefa 2:** Camada de *Trusted Data*, com download do CADOP oficial e *Left Join* via `RegistroANS`.
-
-**Benefícios:**
-
-- Garante integridade referencial sem depender de dados inexistentes na fonte.
-- Hash Join em memória apresenta complexidade **O(N)**, ideal para datasets deste porte.
-
----
+**Decisão:** Utilizar `RegistroANS` como chave primária de ligação, com `pandas.merge` (Hash Join).
+**Problema:** Os arquivos contábeis não possuem CNPJ, apenas o identificador `REG_ANS`.
+**Solução:** O Pipeline foi dividido. A Tarefa 1 extrai o dado contábil fielmente. A Tarefa 2 atua como camada de *Trusted Data*, baixando o CADOP oficial e realizando um *Left Join*.
+**Benefício:** Garante integridade referencial sem depender de dados inexistentes na fonte.
 
 ### 🧾 Tratamento de CNPJs Inválidos
-
 **Trade-off:** Fidelidade contábil vs. pureza cadastral.
+**Decisão:** Manter os registros, mas gerar *log de auditoria*.
+**Justificativa:** Remover linhas distorceria o balanço contábil total do setor. Optou-se por manter o dado financeiro correto, delegando a limpeza cadastral para a camada de visualização.
 
-**Decisão:**  
-Manter os registros, mas gerar *log de auditoria*.
-
-**Justificativa:**
-
-- **Prós:**  
-  O volume financeiro agregado do setor permanece correto. Remover linhas distorceria o balanço contábil.
-- **Contras:**  
-  O dataset final contém dados cadastrais inconsistentes, que devem ser tratados na camada de visualização ou consumo.
-
----
-
-### 🔢 Tratamento de Valores Zerados ou Negativos
-
-**Decisão:**  
-Filtragem rigorosa — `valor > 0`.
-
-**Justificativa:**  
-Valores negativos (estornos) ou nulos distorcem métricas estatísticas como **média** e **desvio padrão**, que são centrais para a análise solicitada.  
-A remoção garante relevância estatística e coerência analítica.
-
----
+### 🔢 Tratamento de Valores Zerados
+**Decisão:** Filtragem rigorosa — `valor > 0`.
+**Justificativa:** Valores negativos (estornos) ou nulos distorcem métricas estatísticas como **média** e **desvio padrão**, que são centrais para a análise solicitada.
 
 ### 📉 Estratégia de Ordenação
-
-**Decisão:**  
-Ordenação em memória com `df.sort_values` (Quicksort interno).
-
-**Justificativa:**  
-Após a agregação (`GROUP BY`), o volume de dados reduz-se drasticamente (para poucos milhares de linhas).  
-O custo computacional da ordenação em memória torna-se desprezível, não justificando *external sort* ou uso de banco de dados apenas para essa etapa.
+**Decisão:** Ordenação em memória com `df.sort_values` (Quicksort interno).
+**Justificativa:** O custo computacional da ordenação em memória para o dataset agregado (milhares de linhas) é desprezível, não justificando o uso de banco de dados apenas para essa etapa.
 
 ---
 
 ## 3. Banco de Dados (SQL)
 
 ### 🏗️ Modelagem: Normalização — Opção A vs. Opção B
-
-**Decisão:**  
-**Opção B — Modelo Normalizado (Star Schema)**
-
+**Decisão:** **Opção B — Modelo Normalizado (Star Schema)**
 - **Tabela Dimensão:** `operadoras` (dados cadastrais)
 - **Tabela Fato:** `despesas_contabeis` (eventos financeiros)
-
 **Justificativa:**
-
-- **Volume:**  
-  As despesas crescem exponencialmente a cada trimestre, enquanto os dados cadastrais são estáveis.
-- **Eficiência:**  
-  Evita repetição massiva de strings como *Razão Social*, reduzindo armazenamento e I/O.
-- **Manutenibilidade:**  
-  Atualizações cadastrais exigem alteração em apenas uma linha, garantindo consistência (ACID).
-
----
+- **Volume:** As despesas crescem exponencialmente, enquanto os dados cadastrais são estáveis. Evita repetição massiva de strings ("Razão Social"), economizando I/O.
+- **Manutenibilidade:** Atualizações cadastrais exigem alteração em apenas uma linha (ACID).
 
 ### 💲 Tipos de Dados: DECIMAL vs. FLOAT
-
-**Decisão:**  
-`DECIMAL(15,2)`
-
-**Justificativa:**  
-Tipos `FLOAT` utilizam ponto flutuante binário (IEEE 754), introduzindo erros de precisão (`0.1 + 0.2 ≠ 0.3`).  
-Para dados financeiros, **precisão exata é obrigatória**, tornando `DECIMAL` a escolha correta.
-
----
+**Decisão:** `DECIMAL(15,2)`
+**Justificativa:** Tipos `FLOAT` utilizam ponto flutuante binário (IEEE 754), introduzindo erros de precisão (`0.1 + 0.2 ≠ 0.3`). Para dados financeiros, **precisão exata é obrigatória**.
 
 ### 🗓️ Tipos de Dados: DATE vs. VARCHAR
-
-**Decisão:**  
-`DATE`
-
-**Justificativa:**  
-
-- Permite ordenação cronológica correta.
-- Viabiliza uso eficiente de funções de data, indexação e particionamento.
-- O trimestre foi convertido para o primeiro dia do mês correspondente  
-  *(ex: 1º trimestre → `2023-01-01`)*.
+**Decisão:** `DATE`
+**Justificativa:** Permite ordenação cronológica correta e uso eficiente de indexação. O trimestre foi convertido para o primeiro dia do mês correspondente (ex: 1º tri → `2023-01-01`).
 
 ---
 
 ## 4. Queries Analíticas
 
-### 🧠 Operadoras Acima da Média em 2 ou Mais Trimestres
+### 🧠 Lógica Analítica (Query 3)
+**Decisão:** Uso de **CTEs (Common Table Expressions)** + Agregação com `HAVING`.
+**Justificativa:** CTEs tornam a query linear e autodocumentável. O *Query Planner* do PostgreSQL materializa as CTEs de forma eficiente, evitando recálculos redundantes da média global.
 
-**Decisão:**  
-Uso de **CTEs (Common Table Expressions)** + agregação com `HAVING`.
+---
 
-**Estratégia:**
+## 5. Interface Web e API (Full-Stack)
 
-1. **CTE `media_trimestral`:**  
-   Calcula a média global de despesas por trimestre.
-2. **CTE `performance`:**  
-   Compara cada operadora com a média do trimestre (flag 0 ou 1).
-3. **Query final:**  
-   Soma os flags e filtra operadoras com `SUM >= 2`.
+Abaixo estão as justificativas para as decisões arquiteturais adotadas no Backend e Frontend, conforme solicitado na Tarefa 4.
 
-**Justificativa:**
+### 🏗️ 4.2.1. Escolha do Framework Backend
+* **Decisão:** **Opção B: FastAPI**
+* **Justificativa:**
+    * **Performance:** Utiliza o padrão ASGI (Assíncrono), lidando com requisições de I/O de forma não-bloqueante, sendo significativamente mais rápido que o Flask.
+    * **Segurança:** O uso do *Pydantic* garante tipagem forte e validação automática de dados.
+    * **Documentação:** Gera nativamente o **Swagger UI** (`/docs`), facilitando testes e atendendo aos requisitos de documentação do desafio.
 
-- **Legibilidade:**  
-  CTEs tornam a query linear, clara e autodocumentável.
-- **Performance:**  
-  O *Query Planner* do PostgreSQL consegue materializar as CTEs de forma eficiente, evitando recálculos redundantes da média global.
+### 📄 4.2.2. Estratégia de Paginação
+* **Decisão:** **Opção A: Offset-based (`LIMIT` + `OFFSET`)**
+* **Justificativa:**
+    * **UX:** Em Dashboards administrativos, o usuário espera poder pular páginas ("Ir para a página 5").
+    * **Performance:** Dado o volume de dados (milhares de registros), o custo do Offset é desprezível. A complexidade do *Cursor-based* (que impede pular páginas) não se justificaria neste caso.
+
+### 🚀 4.2.3. Cache vs Queries Diretas
+* **Decisão:** **Opção A: Calcular na hora (Query Direta)**
+* **Justificativa:**
+    * **Estabilidade:** Os dados da ANS mudam trimestralmente. Durante o uso da aplicação, os dados são estáticos.
+    * **Simplicidade:** O PostgreSQL agrega esses dados em milissegundos. Adicionar Redis ou tabelas pré-calculadas seria *Overengineering* para o escopo do teste.
+
+### 📦 4.2.4. Estrutura de Resposta da API
+* **Decisão:** **Opção B: Dados + Metadados (`{ data: [...], total: 100 }`)**
+* **Justificativa:** Para que o Frontend possa renderizar os controles de paginação corretamente (ex: saber quando desabilitar o botão "Próximo"), ele precisa conhecer o **total de registros** disponíveis no banco.
+
+### 🔍 4.3.1. Estratégia de Busca/Filtro (Frontend)
+* **Decisão:** **Opção A: Busca no Servidor**
+* **Justificativa:**
+    * **Escalabilidade:** Filtrar no cliente exigiria baixar todo o banco de dados para o navegador, o que é inviável (alto *Payload*).
+    * **Performance:** A busca no servidor utiliza índices do banco (`ILIKE`), economizando banda e processamento do usuário.
+
+### 🧩 4.3.2. Gerenciamento de Estado
+* **Decisão:** **Opção C: Composables / Reactivity API (Vue 3)**
+* **Justificativa:** A aplicação possui um escopo focado (Dashboard único). Utilizar bibliotecas globais como **Vuex/Pinia** adicionaria *boilerplate* desnecessário. Variáveis reativas (`ref`) são suficientes e modulares.
+
+### ⚡ 4.3.3. Performance da Tabela
+* **Decisão:** **Paginação no Servidor**
+* **Justificativa:** Renderizar milhares de linhas no DOM trava o navegador. Ao paginar no servidor (trazendo 10 itens por vez), garantimos que a interface permaneça fluida independentemente do tamanho do banco.
+
+### 🛡️ 4.3.4. Tratamento de Erros e Loading
+* **Implementação:**
+    * **Loading:** Feedback visual ("Carregando...") durante requisições assíncronas.
+    * **Erros:** Blocos `try/catch` capturam falhas de rede e exibem alertas no console.
+    * **Dados Vazios:** Tratamento explícito para buscas sem resultados ("Nenhum registro encontrado") para evitar telas em branco confusas.
 
 ---
 

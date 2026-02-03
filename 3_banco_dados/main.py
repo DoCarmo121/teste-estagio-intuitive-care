@@ -4,12 +4,14 @@ import sys
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
+
 # --- CONFIGURACOES DE CONEXAO ---
 print("--- CONFIGURACAO DO BANCO DE DADOS ---")
-DB_HOST = "localhost"
-DB_NAME = "intuitive_care_db"
-DB_USER = input("Digite seu usuario Postgres (ex: postgres): ") or "postgres"
-DB_PASS = input("Digite sua senha Postgres: ")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_NAME = os.getenv("DB_NAME", "intuitive_care_db")
+DB_USER = os.getenv("DB_USER") or input("Digite seu usuario Postgres (ex: postgres): ") or "postgres"
+DB_PASS = os.getenv("DB_PASS") or input("Digite sua senha Postgres: ")
 
 
 def get_db_connection(db_name=None):
