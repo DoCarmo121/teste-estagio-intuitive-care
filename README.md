@@ -139,7 +139,7 @@ Você precisará de **dois terminais abertos simultaneamente**.
 ### 🐍 Terminal 1: Backend (API)
 
 ```bash
-cd 4_interface_web/backend
+cd ../4_interface_web/backend
 pip install -r requirements.txt
 python main.py
 ```
