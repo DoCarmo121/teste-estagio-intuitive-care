@@ -16,26 +16,43 @@ O projeto foi organizado em módulos independentes que funcionam como um Pipelin
     * *Função:* Modelagem e Carga (`Load/Storage`).
     * *Descrição:* Orquestrador em Python e scripts SQL para modelagem do banco de dados relacional (PostgreSQL) e execução de queries analíticas.
 * **`4_interface_web/`** **(Tarefa 4)**
-    * *Função:* Visualização (`Frontend`).
-    * *Descrição:* Aplicação Web (Frontend Vue.js + Backend Python) para visualização dos dados processados.
+    * *Função:* Visualização (`Frontend` & `Backend`).
+    * *Descrição:* API REST com FastAPI e Dashboard interativo com Vue.js 3.
 
 ---
 
 ## ⚙️ Pré-requisitos
 
 * **Python 3.10+**
+* **Node.js 18+** e **npm** (Necessário para a interface web)
 * **PostgreSQL 14+** (Rodando localmente na porta 5432)
 * **Gerenciador de pacotes:** `pip`
 
+### 🔐 Configuração de Ambiente (.env)
+
+O projeto utiliza variáveis de ambiente para gerenciar credenciais sensíveis.
+**Antes de executar**, crie um arquivo chamado `.env` na raiz do projeto com as configurações do seu PostgreSQL local:
+
+```ini
+# Arquivo: .env (na raiz do projeto)
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=intuitive_care_db
+DB_USER=postgres
+DB_PASS=sua_senha_aqui
+```
+
+# 🚀 Como Executar o Pipeline de Dados
+
+Para garantir a **integridade** e a **rastreabilidade dos dados**, a execução deve seguir rigorosamente a ordem abaixo.
+
 ---
 
-## 🚀 Como Executar o Pipeline de Dados
+## 🟢 Passo 1: Extração de Dados Brutos (ETL)
 
-Para garantir a integridade e rastreabilidade dos dados, a execução deve seguir a ordem abaixo:
+Este script conecta-se ao **servidor FTP da ANS**, identifica os **3 trimestres mais recentes**, baixa os arquivos ZIP (lidando com estruturas de pastas variadas) e consolida tudo em um único CSV.
 
-### Passo 1: Extração de Dados Brutos (ETL)
-
-Este script conecta-se ao servidor FTP da ANS, identifica os 3 trimestres mais recentes, baixa os arquivos ZIP (lidando com estruturas de pastas variadas) e consolida tudo em um único CSV.
+### ▶️ Execução
 
 ```bash
 cd 1_etl_ans
@@ -51,11 +68,15 @@ python main.py
 
 ---
 
-### Passo 2: Transformação, Enriquecimento e Validação
+## 🟢 Passo 2: Transformação, Enriquecimento e Validação
 
 Nesta etapa, o script lê o arquivo bruto, baixa o **Cadastro de Operadoras (CADOP)**, realiza o cruzamento de dados e gera arquivos para análise.
 
-**Atualização:** O script agora salva uma cópia do CADOP bruto (`relatorio_cadop.csv`) para ser consumido posteriormente pelo Banco de Dados, evitando necessidade de novo scraping.
+### 🔄 Atualização
+
+O script agora salva uma cópia do **CADOP bruto** (`relatorio_cadop.csv`) para ser consumido posteriormente pelo **Banco de Dados**, evitando a necessidade de novo scraping.
+
+### ▶️ Execução
 
 ```bash
 # Partindo da pasta anterior (1_etl_ans)
@@ -64,23 +85,23 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Saídas Geradas
+### 📤 Saídas Geradas
 
-1. `output/despesas_agregadas.csv`  
-   *(Dados processados e somados por UF).*
-
-2. `output/Teste_JoaoGabriel.zip`  
-   *(Arquivo final compactado).*
-
-3. `output/relatorio_cadop.csv`  
-   **(Novo:** Arquivo bruto para carga no Banco de Dados).*
+- `output/despesas_agregadas.csv` — Dados processados e somados por UF  
+- `output/Teste_JoaoGabriel.zip` — Arquivo final compactado  
+- `output/relatorio_cadop.csv` — **Novo:** Arquivo bruto para carga no Banco de Dados  
 
 ---
 
-### Passo 3: Banco de Dados e Análise SQL
+## 🟢 Passo 3: Banco de Dados e Análise SQL
 
-Esta etapa carrega os dados processados em um banco **PostgreSQL**.  
-Foi desenvolvido um orquestrador em Python que resolve problemas de permissão de arquivos no Linux (copiando temporariamente para `/tmp`) e injeta os caminhos absolutos corretos nos scripts SQL.
+Esta etapa carrega os dados processados em um banco **PostgreSQL**.
+
+Foi desenvolvido um **orquestrador em Python** que:
+- Resolve problemas de permissão de arquivos no Linux (copiando temporariamente para `/tmp`);
+- Injeta os caminhos absolutos corretos nos scripts SQL.
+
+### ▶️ Execução
 
 ```bash
 cd ../3_banco_dados
@@ -88,148 +109,324 @@ pip install -r requirements.txt
 python main.py
 ```
 
-O script solicitará seu usuário e senha do PostgreSQL local, criará o banco intuitive_care_db e executará a carga automaticamente.
+O script lerá as credenciais do arquivo .env (ou solicitará via terminal), criará o banco intuitive_care_db e executará a carga automaticamente.
 Para verificar os resultados das queries analíticas via terminal:
 
 ```bash
 psql -h localhost -U postgres -d intuitive_care_db -f 3_queries_analiticas.sql
 ```
 
-# 🧠 Trade-offs e Decisões Técnicas
-**Documentação Obrigatória**
+## 🟢 Passo 4: Interface Web e API (Full-Stack)
 
-Este documento descreve as principais decisões técnicas adotadas no pipeline de dados e na aplicação web, destacando os trade-offs entre performance, qualidade de dados, simplicidade e escalabilidade.
+Esta etapa sobe a **API (Python)** e o **Dashboard (Vue.js)**.  
+Você precisará de **dois terminais abertos simultaneamente**.
+
+---
+
+### 🐍 Terminal 1: Backend (API)
+
+```bash
+cd 4_interface_web/backend
+pip install -r requirements.txt
+python main.py
+```
+
+- **Como testar:** O servidor iniciará em `http://localhost:8000`.
+
+- **Documentação Interativa (Swagger):**  
+  Acesse `http://localhost:8000/docs` para visualizar e testar todas as rotas da API (Requisito 4.4).
+
+
+### 🎨 Terminal 2: Frontend (Dashboard)
+
+```bash
+cd 4_interface_web/frontend
+npm install        # Instala dependências do Vue, Axios e Chart.js
+npm run dev        # Inicia o servidor de desenvolvimento
+```
+
+- **Acesso:** O Dashboard estará disponível em `http://localhost:5173/`
+
+- **Funcionalidades:**
+  - Tabela paginada  
+  - Busca por CNPJ ou Nome  
+  - Gráfico de despesas por UF  
+  - Modal de detalhes históricos
+
+---
+
+# 🧠 Trade-offs e Decisões Técnicas  
+## Documentação Obrigatória
+
+Este documento descreve as principais **decisões técnicas** adotadas no pipeline de dados e na aplicação web, destacando os **trade-offs entre performance, qualidade de dados, simplicidade e escalabilidade**.
 
 ---
 
 ## 1. Processamento e Extração (ETL)
 
 ### ⚡ Processamento: Memória vs. Incremental vs. Stream
-**Decisão:** Abordagem híbrida — *Download via Stream* + *Processamento In-Memory*.
+
+**Decisão:** Abordagem híbrida — **Download via Stream + Processamento In-Memory**
+
 **Justificativa:**
-- **Download:** Os arquivos ZIP são baixados em *chunks* de 8 KB, reduzindo picos de memória e tornando o processo mais resiliente a falhas de rede.
-- **Processamento:** O volume consolidado dos três trimestres, mesmo após descompactação, permanece abaixo de 2 GB. O uso de operações vetorizadas do **Pandas (In-Memory)** é ordens de magnitude mais rápido do que abordagens baseadas em disco ou frameworks distribuídos (ex: Spark) para este cenário.
+
+- **Download:**  
+  Os arquivos ZIP são baixados em *chunks* de 8 KB, reduzindo picos de memória e tornando o processo mais resiliente a falhas de rede.
+
+- **Processamento:**  
+  O volume consolidado dos três trimestres, mesmo após descompactação, permanece abaixo de 2 GB.  
+  O uso de operações vetorizadas do **Pandas (In-Memory)** é ordens de magnitude mais rápido do que abordagens baseadas em disco ou frameworks distribuídos (ex: Spark) para este cenário.
+
+---
 
 ### 📅 Inconsistência de Datas
-**Problema:** A coluna de data nos CSVs originais apresenta múltiplos formatos inconsistentes (`1T2024`, `01/01/2024`, `jan/24`).
-**Decisão:** Ignorar a data interna dos arquivos.
-**Solução:** Utilizar a estrutura de diretórios do FTP da ANS como *Source of Truth*, injetando programaticamente as colunas **Ano** e **Trimestre**.
-**Benefício:** Elimina ambiguidades e garante consistência temporal 100% confiável.
+
+- **Problema:**  
+  A coluna de data nos CSVs originais apresenta múltiplos formatos inconsistentes (`1T2024`, `01/01/2024`, `jan/24`).
+
+- **Decisão:**  
+  Ignorar a data interna dos arquivos.
+
+- **Solução:**  
+  Utilizar a estrutura de diretórios do FTP da ANS como *Source of Truth*, injetando programaticamente as colunas **Ano** e **Trimestre**.
+
+- **Benefício:**  
+  Elimina ambiguidades e garante consistência temporal **100% confiável**.
 
 ---
 
 ## 2. Transformação e Enriquecimento
 
 ### 🔗 Estratégia de Join e Integridade (RegistroANS)
-**Decisão:** Utilizar `RegistroANS` como chave primária de ligação, com `pandas.merge` (Hash Join).
-**Problema:** Os arquivos contábeis não possuem CNPJ, apenas o identificador `REG_ANS`.
-**Solução:** O Pipeline foi dividido. A Tarefa 1 extrai o dado contábil fielmente. A Tarefa 2 atua como camada de *Trusted Data*, baixando o CADOP oficial e realizando um *Left Join*.
-**Benefício:** Garante integridade referencial sem depender de dados inexistentes na fonte.
+
+- **Decisão:**  
+  Utilizar **RegistroANS** como chave primária de ligação, com `pandas.merge` (*Hash Join*).
+
+- **Problema:**  
+  Os arquivos contábeis não possuem CNPJ, apenas o identificador **REG_ANS**.
+
+- **Solução:**  
+  O pipeline foi dividido:
+  - **Tarefa 1:** Extração fiel do dado contábil.
+  - **Tarefa 2:** Camada de *Trusted Data*, baixando o **CADOP oficial** e realizando um **Left Join**.
+
+- **Benefício:**  
+  Garante integridade referencial sem depender de dados inexistentes na fonte.
+
+---
 
 ### 🧾 Tratamento de CNPJs Inválidos
-**Trade-off:** Fidelidade contábil vs. pureza cadastral.
-**Decisão:** Manter os registros, mas gerar *log de auditoria*.
-**Justificativa:** Remover linhas distorceria o balanço contábil total do setor. Optou-se por manter o dado financeiro correto, delegando a limpeza cadastral para a camada de visualização.
+
+- **Trade-off:** Fidelidade contábil vs. pureza cadastral  
+- **Decisão:** Manter os registros, mas gerar **log de auditoria**.
+
+**Justificativa:**  
+Remover linhas distorceria o balanço contábil total do setor.  
+Optou-se por manter o dado financeiro correto, delegando a limpeza cadastral para a camada de visualização.
+
+---
 
 ### 🔢 Tratamento de Valores Zerados
-**Decisão:** Filtragem rigorosa — `valor > 0`.
-**Justificativa:** Valores negativos (estornos) ou nulos distorcem métricas estatísticas como **média** e **desvio padrão**, que são centrais para a análise solicitada.
+
+- **Decisão:** Filtragem rigorosa — `valor > 0`
+
+**Justificativa:**  
+Valores negativos (estornos) ou nulos distorcem métricas estatísticas como **média** e **desvio padrão**, centrais para a análise solicitada.
+
+---
 
 ### 📉 Estratégia de Ordenação
-**Decisão:** Ordenação em memória com `df.sort_values` (Quicksort interno).
-**Justificativa:** O custo computacional da ordenação em memória para o dataset agregado (milhares de linhas) é desprezível, não justificando o uso de banco de dados apenas para essa etapa.
+
+- **Decisão:** Ordenação em memória com `df.sort_values` (Quicksort interno)
+
+**Justificativa:**  
+O custo computacional da ordenação em memória para o dataset agregado (milhares de linhas) é desprezível, não justificando o uso de banco de dados apenas para essa etapa.
 
 ---
 
 ## 3. Banco de Dados (SQL)
 
 ### 🏗️ Modelagem: Normalização — Opção A vs. Opção B
-**Decisão:** **Opção B — Modelo Normalizado (Star Schema)**
-- **Tabela Dimensão:** `operadoras` (dados cadastrais)
+
+**Decisão:** Opção B — **Modelo Normalizado (Star Schema)**
+
+- **Tabela Dimensão:** `operadoras` (dados cadastrais)  
 - **Tabela Fato:** `despesas_contabeis` (eventos financeiros)
+
 **Justificativa:**
-- **Volume:** As despesas crescem exponencialmente, enquanto os dados cadastrais são estáveis. Evita repetição massiva de strings ("Razão Social"), economizando I/O.
-- **Manutenibilidade:** Atualizações cadastrais exigem alteração em apenas uma linha (ACID).
+
+- **Volume:**  
+  As despesas crescem exponencialmente, enquanto os dados cadastrais são estáveis.  
+  Evita repetição massiva de strings (ex: *Razão Social*), economizando I/O.
+
+- **Manutenibilidade:**  
+  Atualizações cadastrais exigem alteração em apenas uma linha (**ACID**).
+
+---
 
 ### 💲 Tipos de Dados: DECIMAL vs. FLOAT
-**Decisão:** `DECIMAL(15,2)`
-**Justificativa:** Tipos `FLOAT` utilizam ponto flutuante binário (IEEE 754), introduzindo erros de precisão (`0.1 + 0.2 ≠ 0.3`). Para dados financeiros, **precisão exata é obrigatória**.
+
+- **Decisão:** `DECIMAL(15,2)`
+
+**Justificativa:**  
+Tipos `FLOAT` utilizam ponto flutuante binário (IEEE 754), introduzindo erros de precisão  
+(ex: `0.1 + 0.2 ≠ 0.3`).  
+Para dados financeiros, **precisão exata é obrigatória**.
+
+---
 
 ### 🗓️ Tipos de Dados: DATE vs. VARCHAR
-**Decisão:** `DATE`
-**Justificativa:** Permite ordenação cronológica correta e uso eficiente de indexação. O trimestre foi convertido para o primeiro dia do mês correspondente (ex: 1º tri → `2023-01-01`).
+
+- **Decisão:** `DATE`
+
+**Justificativa:**  
+Permite ordenação cronológica correta e uso eficiente de indexação.  
+O trimestre foi convertido para o primeiro dia do mês correspondente  
+(ex: 1º tri → `2023-01-01`).
 
 ---
 
 ## 4. Queries Analíticas
 
 ### 🧠 Lógica Analítica (Query 3)
-**Decisão:** Uso de **CTEs (Common Table Expressions)** + Agregação com `HAVING`.
-**Justificativa:** CTEs tornam a query linear e autodocumentável. O *Query Planner* do PostgreSQL materializa as CTEs de forma eficiente, evitando recálculos redundantes da média global.
+
+- **Decisão:** Uso de **CTEs (Common Table Expressions)** + agregação com `HAVING`
+
+**Justificativa:**  
+CTEs tornam a query **linear e autodocumentável**.  
+O *Query Planner* do PostgreSQL materializa as CTEs de forma eficiente, evitando recálculos redundantes da média global.
 
 ---
 
 ## 5. Interface Web e API (Full-Stack)
 
-Abaixo estão as justificativas para as decisões arquiteturais adotadas no Backend e Frontend, conforme solicitado na Tarefa 4.
+Abaixo estão as justificativas para as decisões arquiteturais adotadas no **Backend** e **Frontend**, conforme solicitado na **Tarefa 4**.
+
+---
 
 ### 🏗️ 4.2.1. Escolha do Framework Backend
-* **Decisão:** **Opção B: FastAPI**
-* **Justificativa:**
-    * **Performance:** Utiliza o padrão ASGI (Assíncrono), lidando com requisições de I/O de forma não-bloqueante, sendo significativamente mais rápido que o Flask.
-    * **Segurança:** O uso do *Pydantic* garante tipagem forte e validação automática de dados.
-    * **Documentação:** Gera nativamente o **Swagger UI** (`/docs`), facilitando testes e atendendo aos requisitos de documentação do desafio.
+
+- **Decisão:** Opção B — **FastAPI**
+
+**Justificativa:**
+
+- **Performance:**  
+  Utiliza o padrão **ASGI (assíncrono)**, lidando com requisições de I/O de forma não-bloqueante, sendo significativamente mais rápido que o Flask.
+
+- **Segurança:**  
+  O uso do **Pydantic** garante tipagem forte e validação automática de dados.
+
+- **Documentação:**  
+  Gera nativamente o **Swagger UI** (`/docs`), facilitando testes e atendendo aos requisitos do desafio.
+
+---
 
 ### 📄 4.2.2. Estratégia de Paginação
-* **Decisão:** **Opção A: Offset-based (`LIMIT` + `OFFSET`)**
-* **Justificativa:**
-    * **UX:** Em Dashboards administrativos, o usuário espera poder pular páginas ("Ir para a página 5").
-    * **Performance:** Dado o volume de dados (milhares de registros), o custo do Offset é desprezível. A complexidade do *Cursor-based* (que impede pular páginas) não se justificaria neste caso.
 
-### 🚀 4.2.3. Cache vs Queries Diretas
-* **Decisão:** **Opção A: Calcular na hora (Query Direta)**
-* **Justificativa:**
-    * **Estabilidade:** Os dados da ANS mudam trimestralmente. Durante o uso da aplicação, os dados são estáticos.
-    * **Simplicidade:** O PostgreSQL agrega esses dados em milissegundos. Adicionar Redis ou tabelas pré-calculadas seria *Overengineering* para o escopo do teste.
+- **Decisão:** Opção A — **Offset-based** (`LIMIT + OFFSET`)
+
+**Justificativa:**
+
+- **UX:**  
+  Em dashboards administrativos, o usuário espera poder pular páginas  
+  (ex: “Ir para a página 5”).
+
+- **Performance:**  
+  Dado o volume de dados (milhares de registros), o custo do `OFFSET` é desprezível.  
+  A complexidade do *Cursor-based* não se justifica neste contexto.
+
+---
+
+### 🚀 4.2.3. Cache vs. Queries Diretas
+
+- **Decisão:** Opção A — **Query Direta**
+
+**Justificativa:**
+
+- **Estabilidade:**  
+  Os dados da ANS mudam trimestralmente e permanecem estáticos durante o uso da aplicação.
+
+- **Simplicidade:**  
+  O PostgreSQL executa essas agregações em milissegundos.  
+  Adicionar Redis ou tabelas pré-calculadas seria **overengineering**.
+
+---
 
 ### 📦 4.2.4. Estrutura de Resposta da API
-* **Decisão:** **Opção B: Dados + Metadados (`{ data: [...], total: 100 }`)**
-* **Justificativa:** Para que o Frontend possa renderizar os controles de paginação corretamente (ex: saber quando desabilitar o botão "Próximo"), ele precisa conhecer o **total de registros** disponíveis no banco.
 
-### 🔍 4.3.1. Estratégia de Busca/Filtro (Frontend)
-* **Decisão:** **Opção A: Busca no Servidor**
-* **Justificativa:**
-    * **Escalabilidade:** Filtrar no cliente exigiria baixar todo o banco de dados para o navegador, o que é inviável (alto *Payload*).
-    * **Performance:** A busca no servidor utiliza índices do banco (`ILIKE`), economizando banda e processamento do usuário.
+- **Decisão:** Opção B — **Dados + Metadados**
 
-### 🧩 4.3.2. Gerenciamento de Estado
-* **Decisão:** **Opção C: Composables / Reactivity API (Vue 3)**
-* **Justificativa:** A aplicação possui um escopo focado (Dashboard único). Utilizar bibliotecas globais como **Vuex/Pinia** adicionaria *boilerplate* desnecessário. Variáveis reativas (`ref`) são suficientes e modulares.
+```json
+{ "data": [...], "total": 100 }
+```
+- **Justificativa:** Para que o Frontend possa renderizar os controles
+de paginação corretamente (ex: saber quando desabilitar o botão "Próximo"), 
+ ele precisa conhecer o total de registros disponíveis no banco.
 
-### ⚡ 4.3.3. Performance da Tabela
-* **Decisão:** **Paginação no Servidor**
-* **Justificativa:** Renderizar milhares de linhas no DOM trava o navegador. Ao paginar no servidor (trazendo 10 itens por vez), garantimos que a interface permaneça fluida independentemente do tamanho do banco.
+## 🔍 4.3.1. Estratégia de Busca/Filtro (Frontend)
 
-### 🛡️ 4.3.4. Tratamento de Erros e Loading
-* **Implementação:**
-    * **Loading:** Feedback visual ("Carregando...") durante requisições assíncronas.
-    * **Erros:** Blocos `try/catch` capturam falhas de rede e exibem alertas no console.
-    * **Dados Vazios:** Tratamento explícito para buscas sem resultados ("Nenhum registro encontrado") para evitar telas em branco confusas.
+- **Decisão:** Opção A — **Busca no Servidor**
+
+- **Justificativa:**
+  - **Escalabilidade:** Filtrar no cliente exigiria baixar todo o banco de dados para o navegador, o que é inviável (alto payload).
+  - **Performance:** A busca no servidor utiliza índices do banco (`ILIKE`), economizando banda e processamento do usuário.
+
+---
+
+## 🧩 4.3.2. Gerenciamento de Estado
+
+- **Decisão:** Opção C — **Composables / Reactivity API (Vue 3)**
+
+- **Justificativa:**  
+  A aplicação possui um escopo focado (dashboard único).  
+  Utilizar bibliotecas globais como **Vuex** ou **Pinia** adicionaria *boilerplate* desnecessário.  
+  Variáveis reativas (`ref`) são suficientes, simples e modulares para este cenário.
+
+---
+
+## ⚡ 4.3.3. Performance da Tabela
+
+- **Decisão:** **Paginação no Servidor**
+
+- **Justificativa:**  
+  Renderizar milhares de linhas no DOM degrada significativamente a performance do navegador.  
+  Ao paginar no servidor (trazendo 10 itens por vez), a interface permanece fluida independentemente do tamanho do banco.
+
+---
+
+## 🛡️ 4.3.4. Tratamento de Erros e Loading
+
+### Implementação
+
+- **Loading:**  
+  Feedback visual ("Carregando...") durante requisições assíncronas.
+
+- **Erros:**  
+  Blocos `try/catch` capturam falhas de rede e exibem alertas no console.
+
+- **Dados Vazios:**  
+  Tratamento explícito para buscas sem resultados  
+  ("Nenhum registro encontrado"), evitando telas em branco confusas.
 
 ---
 
 ## 🛠 Tecnologias Utilizadas
 
-### 🔤 Linguagem e Bibliotecas
+### 🔤 Linguagens e Bibliotecas
 
 - **Python 3.10+**
-- **pandas:** Manipulação de dados e agregações.
-- **requests / BeautifulSoup:** Scraping e download de arquivos.
-- **psycopg2 / SQLAlchemy:** Conectividade com banco de dados.
+- **pandas** — Manipulação de dados e agregações
+- **requests / BeautifulSoup** — Scraping e download de arquivos
+- **psycopg2 / SQLAlchemy** — Conectividade com banco de dados
+- **FastAPI / Uvicorn** — API e servidor assíncrono
+- **Vue.js 3 / Vite** — Frontend e build tool
 
 ---
 
 ### 🗄️ Banco de Dados
 
 - **PostgreSQL 14+**  
-  Banco de dados relacional utilizado para armazenamento, modelagem e análise analítica.
+  Banco de dados relacional utilizado para armazenamento, modelagem e análises analíticas.
+
+---
+
