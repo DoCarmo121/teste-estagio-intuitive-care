@@ -42,6 +42,16 @@ DB_USER=postgres
 DB_PASS=sua_senha_aqui
 ```
 
+### 🐍 Configuração do Ambiente Virtual (Recomendado)
+
+Para manter as dependências isoladas e organizadas, recomenda-se criar um ambiente virtual na raiz do projeto antes de começar:
+
+**No Linux / Mac:**
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
 # 🚀 Como Executar o Pipeline de Dados
 
 Para garantir a **integridade** e a **rastreabilidade dos dados**, a execução deve seguir rigorosamente a ordem abaixo.
