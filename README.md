@@ -52,6 +52,22 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
+**No Windows:**
+```bash
+python -m venv venv
+.\venv\Scripts\activate
+```
+
+⚠️ **Atenção (Windows)**
+
+Se ao tentar ativar aparecer um erro em vermelho informando que **“a execução de scripts foi desabilitada”**, isso é uma trava de segurança do **PowerShell**.
+
+Para resolver, execute o comando abaixo **apenas uma vez** e depois tente ativar novamente:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
 # 🚀 Como Executar o Pipeline de Dados
 
 Para garantir a **integridade** e a **rastreabilidade dos dados**, a execução deve seguir rigorosamente a ordem abaixo.
@@ -74,7 +90,7 @@ python main.py
 ### 📤 Saídas Geradas
 
 - `output/consolidado_despesas.csv`
-- `output/consolidado_despesas.csv` - Arquivo Compactado
+- `output/consolidado_despesas.zip` - Arquivo Compactado
 
 - **Nota:** O arquivo gerado mantém a coluna **RegistroANS** como chave primária.  
   As colunas **CNPJ** e **Razão Social** são preenchidas com `"N/A"`, pois os arquivos contábeis originais não disponibilizam essas informações.
@@ -122,25 +138,28 @@ pip install -r requirements.txt
 python main.py
 ```
 
-O script lerá as credenciais do arquivo .env (ou solicitará via terminal), criará o banco intuitive_care_db e executará a carga automaticamente.
-Para verificar os resultados das queries analíticas via terminal:
-
-```bash
-psql -h localhost -U postgres -d intuitive_care_db -f 3_queries_analiticas.sql
-```
+---
 
 ## 🟢 Passo 4: Interface Web e API (Full-Stack)
 
 Esta etapa sobe a **API (Python)** e o **Dashboard (Vue.js)**.  
 Você precisará de **dois terminais abertos simultaneamente**.
 
+### 📦 Configuração Inicial
+Antes de iniciar os terminais, navegue até a pasta da tarefa e
+instale as dependências globais deste módulo:
+
+```bash
+cd ../4_interface_web
+pip install -r requirements.txt
+```
+
 ---
 
 ### 🐍 Terminal 1: Backend (API)
 
 ```bash
-cd /4_interface_web/backend
-pip install -r requirements.txt
+cd backend
 python main.py
 ```
 
@@ -156,6 +175,7 @@ todas as rotas disponíveis da API:
 ### 🎨 Terminal 2: Frontend (Dashboard)
 
 ```bash
+# Partindo da raiz do projeto
 cd 4_interface_web/frontend
 npm install        # Instala dependências do Vue, Axios e Chart.js
 npm run dev        # Inicia o servidor de desenvolvimento

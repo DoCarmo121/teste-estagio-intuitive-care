@@ -61,13 +61,23 @@ def criar_banco_se_nao_existir():
 def preparar_arquivos_para_postgres(mapa_originais):
     print("Preparando arquivos para importacao...")
 
-    base_temp = tempfile.gettempdir()
+    if os.name == 'nt':  # Se for Windows
+        # Tenta usar C:\Users\Public\Documents
+        base_temp = os.path.join(os.environ.get('PUBLIC', 'C:\\Users\\Public'), 'Documents')
+    else:
+        base_temp = tempfile.gettempdir()
+
     temp_dir = os.path.join(base_temp, "intuitive_care_dados")
 
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-    os.makedirs(temp_dir, exist_ok=True)
+    try:
+        os.makedirs(temp_dir, exist_ok=True)
+    except Exception as e:
+        print(f"Aviso: Nao foi possivel criar pasta em {base_temp}. Tentando raiz...")
+        temp_dir = "C:\\intuitive_temp"
+        os.makedirs(temp_dir, exist_ok=True)
 
     try:
         os.chmod(temp_dir, 0o777)
@@ -86,6 +96,7 @@ def preparar_arquivos_para_postgres(mapa_originais):
         nome_arquivo = os.path.basename(caminho_original)
         caminho_temp = os.path.join(temp_dir, nome_arquivo)
 
+        # Copia o arquivo
         shutil.copy2(caminho_original, caminho_temp)
 
         try:
@@ -94,10 +105,9 @@ def preparar_arquivos_para_postgres(mapa_originais):
             pass
 
         novos_caminhos[placeholder] = caminho_temp
-        print(f"   -> Arquivo preparado: {nome_arquivo}")
+        print(f"   -> Arquivo preparado em local seguro: {caminho_temp}")
 
     return novos_caminhos
-
 
 def executar_sql_arquivo(cursor, arquivo_sql, placeholders=None):
     print(f"Executando script: {os.path.basename(arquivo_sql)}...")
